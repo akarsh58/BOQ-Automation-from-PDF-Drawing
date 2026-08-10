@@ -1,0 +1,21 @@
+item_code,description,unit,rate_inr,category
+1.1,Earthwork excavation in foundation trenches,cum,220,Earthwork
+1.2,Backfilling with excavated earth,cum,120,Earthwork
+2.1,PCC 1:4:8 below foundation,cum,4800,Concrete
+2.2,RCC M20 in foundation/footing,cum,6800,Concrete
+2.3,RCC M20 in columns,cum,7200,Concrete
+2.4,RCC M20 in beams,cum,7000,Concrete
+2.5,RCC M20 in slabs,cum,6900,Concrete
+3.1,Brickwork in CM 1:6 in superstructure,cum,5200,Masonry
+3.2,Half brick partition wall,sqm,650,Masonry
+4.1,12mm cement plaster internal,sqm,220,Finishing
+4.2,20mm cement plaster external,sqm,290,Finishing
+5.1,Vitrified tile flooring,sqm,950,Flooring
+5.2,Ceramic tile dado,sqm,780,Flooring
+6.1,Painting with acrylic emulsion (2 coats),sqm,120,Painting
+6.2,Weatherproof exterior paint,sqm,150,Painting
+7.1,Flush door with frame,each,8500,Doors_Windows
+7.2,Aluminium sliding window,sqm,4200,Doors_Windows
+8.1,Internal electrical wiring point,point,850,Electrical
+8.2,Plumbing pipeline (CPVC) per point,point,1200,Plumbing
+9.1,Waterproofing treatment,sqm,380,Waterproofing
