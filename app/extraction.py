@@ -90,14 +90,26 @@ def pixels_to_units(box, px_per_unit, unit="m"):
     }
 
 
-def estimate_scale_from_text(text, default_px_per_unit=50):
+def estimate_scale_from_text(text, default_px_per_unit=50, render_dpi=200, drawing_dpi=72):
     """
-    Very simple scale estimator: looks for 'SCALE 1:100' style text.
-    Falls back to a default if not found. In production, calibrate manually
-    or let the user click two points of known real-world distance.
+    Estimate pixels-per-real-world-unit (meter) from 'SCALE 1:N' text in the drawing.
+
+    IMPORTANT: px_per_unit must be computed relative to the DPI at which the page
+    was rendered to an image (render_dpi, see pdf_to_images). CAD/PDF drawings are
+    authored in points (drawing_dpi=72). If render_dpi != drawing_dpi, pixel counts
+    scale by (render_dpi / drawing_dpi) relative to the original drawing geometry.
+    This function returns px_per_unit already adjusted for that ratio, so callers
+    can directly use it with pixels_to_units() on images from pdf_to_images(dpi=render_dpi).
+
+    Falls back to a default (also DPI-adjusted) if no scale text is found. In
+    production, prefer manual calibration: let the user click two points of
+    known real-world distance on the rendered image.
     """
+    dpi_ratio = render_dpi / drawing_dpi
     m = re.search(r"SCALE\s*1\s*[:/]\s*(\d+)", text.upper())
     if m:
         ratio = int(m.group(1))
-        return max(5, default_px_per_unit / (ratio / 100))
-    return default_px_per_unit
+        base_px_per_unit = default_px_per_unit / (ratio / 100)
+    else:
+        base_px_per_unit = default_px_per_unit
+    return max(5, base_px_per_unit * dpi_ratio)
