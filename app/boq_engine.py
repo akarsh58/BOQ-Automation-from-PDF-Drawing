@@ -38,7 +38,7 @@ def classify_room(box_info, index):
     return name[:80] if name else f"Room_{index + 1}"
 
 
-def rooms_to_line_items(rooms, kb, wall_height_m=3.0):
+def rooms_to_line_items(rooms, kb, wall_height_m=3.0, wall_thickness_m=0.23):
     """
     Convert detected room boxes (with area/width/height) into BOQ line items:
     flooring, plastering, painting, brickwork walls.
@@ -49,6 +49,12 @@ def rooms_to_line_items(rooms, kb, wall_height_m=3.0):
         raise ValueError("wall_height_m must be a number") from exc
     if not math.isfinite(wall_height_m) or wall_height_m <= 0:
         raise ValueError("wall_height_m must be positive")
+    try:
+        wall_thickness_m = float(wall_thickness_m)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("wall_thickness_m must be a number") from exc
+    if not math.isfinite(wall_thickness_m) or wall_thickness_m <= 0:
+        raise ValueError("wall_thickness_m must be positive")
 
     def kb_row(code):
         rows = kb[kb["item_code"] == code]
@@ -87,7 +93,7 @@ def rooms_to_line_items(rooms, kb, wall_height_m=3.0):
                       "amount_inr": round(wall_area * rate, 2)})
 
         desc, unit, rate = kb_row(3.1)
-        wall_volume = perimeter * wall_height_m * 0.23  # 230mm brick wall thickness
+        wall_volume = perimeter * wall_height_m * wall_thickness_m
         items.append({"room": room_name, "item_code": 3.1, "description": desc,
                       "unit": unit, "quantity": round(wall_volume, 2), "rate_inr": rate,
                       "amount_inr": round(wall_volume * rate, 2)})

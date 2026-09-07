@@ -100,10 +100,38 @@ def detect_rooms_walls(image):
     for c in contours:
         x, y, w, h = cv2.boundingRect(c)
         area = w * h
-        # keep boxes that look like rooms: not too tiny, not the whole page
-        if 0.002 * img_area < area < 0.6 * img_area:
+        perimeter = cv2.arcLength(c, True)
+        approximation = cv2.approxPolyDP(c, 0.03 * perimeter, True) if perimeter else []
+        rectangular = len(approximation) >= 4
+        aspect_ratio = max(w / max(h, 1), h / max(w, 1))
+        # Keep plausible room-sized, mostly rectangular contours and reject page
+        # borders, text fragments, and extremely thin drawing artifacts.
+        if (
+            rectangular
+            and 0.002 * img_area < area < 0.6 * img_area
+            and min(w, h) >= 30
+            and aspect_ratio <= 12
+        ):
             boxes.append((x, y, w, h))
-    return boxes
+
+    # Dilation can produce several nearly identical contours for one room.
+    # Prefer the larger candidate when boxes substantially overlap.
+    deduplicated = []
+    for candidate in sorted(boxes, key=lambda box: box[2] * box[3], reverse=True):
+        cx, cy, cw, ch = candidate
+        duplicate = False
+        for ox, oy, ow, oh in deduplicated:
+            ix = max(0, min(cx + cw, ox + ow) - max(cx, ox))
+            iy = max(0, min(cy + ch, oy + oh) - max(cy, oy))
+            intersection = ix * iy
+            union = cw * ch + ow * oh - intersection
+            contained = intersection / max(min(cw * ch, ow * oh), 1)
+            if intersection / max(union, 1) >= 0.75 or contained >= 0.9:
+                duplicate = True
+                break
+        if not duplicate:
+            deduplicated.append(candidate)
+    return sorted(deduplicated, key=lambda box: (box[1], box[0]))
 
 
 def pixels_to_units(box, px_per_unit, unit="m"):

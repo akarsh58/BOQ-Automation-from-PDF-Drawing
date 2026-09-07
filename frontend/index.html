@@ -60,6 +60,7 @@
         </label>
         <div class="field"><label for="projectName">Project</label><input id="projectName" type="text" placeholder="Project name"></div>
         <div class="field"><label for="defaultHeight">Default wall height (m)</label><input id="defaultHeight" type="number" min=".1" max="20" step=".1" value="3"></div>
+        <div class="field"><label for="wallThickness">Default wall thickness (m)</label><input id="wallThickness" type="number" min=".01" max="2" step=".01" value=".23"></div>
         <button class="primary" id="reviewBtn" disabled>Load for takeoff</button>
       </div>
       <div id="status" role="status"></div>
@@ -454,6 +455,7 @@ $('generateBtn').onclick=async()=>{
   $('generateBtn').disabled=true; setStatus('Building tender Excel (cover, taking-off, abstract, priced BOQ)…');
   const form=new FormData(); form.append('file',file); form.append('takeoff', JSON.stringify(takeoffPayload()));
   form.append('wall_height_m', String(Number($('defaultHeight').value)||3));
+  form.append('wall_thickness_m', String(Number($('wallThickness').value)||.23));
   try {
     const response=await fetch(`${API}/generate`,{method:'POST',body:form});
     if(!response.ok) throw Error(await responseError(response));
@@ -463,7 +465,7 @@ $('generateBtn').onclick=async()=>{
   } catch(e) { setStatus(e.message||'Could not generate the BOQ.',true); }
   finally {$('generateBtn').disabled=false;}
 };
-$('resetBtn').onclick=()=>{preview=null;file=null;draft=null;scalePts=null;imgCache=null;$('file').value='';$('fileLabel').textContent='Choose a PDF, image, or IFC';$('drop').classList.remove('ready');$('workspace').style.display='none';$('reviewBtn').disabled=true;$('qsSign').checked=false;$('ifcUnits').checked=false;setStatus('');};
+$('resetBtn').onclick=()=>{preview=null;file=null;draft=null;scalePts=[];imgCache=null;$('file').value='';$('fileLabel').textContent='Choose a PDF, image, or IFC';$('drop').classList.remove('ready');$('workspace').style.display='none';$('reviewBtn').disabled=true;$('qsSign').checked=false;$('ifcUnits').checked=false;setStatus('');};
 renderTools();
 </script>
 </body>

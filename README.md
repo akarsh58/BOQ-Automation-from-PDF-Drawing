@@ -69,30 +69,33 @@ Check `output/demo_generated_boq.xlsx` for the result.
    API docs available at http://localhost:8000/docs
 
 2. Open `frontend/index.html` directly in your browser (double-click it), choose
-   a drawing, and click **Review drawing**.
-   The UI calls `POST /preview`, displays the rendered pages and detected room
-   rectangles, and lets you move, resize, rename, add, or remove rooms. Confirm
-   the detected (or manually entered) pixels-per-metre scale, then click
-   **Generate Excel**. The reviewed geometry is sent to `POST /generate` and
-   the Excel file downloads automatically.
+   a drawing, and click **Load for takeoff**.
+   The UI calls `POST /preview`, displays detected draft spaces, and lets you
+   trace or review spaces, walls, openings, slabs, beams, columns, footings,
+   and excavations. Calibrate every drawing page using two known points, enter
+   the default wall height/thickness, then complete QS sign-off. The reviewed
+   takeoff is sent to `POST /generate` and a tender workbook with cover,
+   taking-off, abstract, priced BOQ, and deficiencies sheets downloads.
 
 The API permits the standalone `file://` frontend and common localhost
 development ports by default. For a deployed frontend, set
 `BOQ_CORS_ORIGINS` to a comma-separated allowlist (for example,
 `https://boq.example.com`) before starting Uvicorn.
 
-The original `POST /generate-boq` endpoint remains available for one-click
-generation and now also accepts optional `reviewed_rooms`, `px_per_unit`, and
-`wall_height_m` form fields. Uploads are validated (type, size, and decoded
-content) and temporary files are cleaned up after every request.
+The original `POST /generate-boq` endpoint remains available for compatibility
+and accepts the legacy room fields plus `wall_thickness_m`. The newer
+`POST /generate` endpoint accepts reviewed `takeoff` JSON and is the
+tender-grade path. Uploads are validated (type, size, decoded content, and
+render limits), and temporary files are cleaned up after every request.
 
 ## Using your own drawings
 
 - Works best with **vector PDFs exported from AutoCAD/Revit** (text layer intact) —
   these give the most accurate text/dimension extraction.
 - **Scanned drawings** also work via OCR, but accuracy depends on scan quality.
-- If room detection picks up noise (too many/few boxes), tune the area thresholds
-  in `app/extraction.py` → `detect_rooms_walls()`.
+- Automatic room boxes are draft suggestions only; review or retrace them before
+  tender export. The detector filters page borders, thin artifacts, and
+  duplicate overlapping contours, but it does not understand every CAD symbol.
 - If scale is wrong, either add a "SCALE 1:100" text label to your drawing, or
   manually calibrate each page in the review screen. The reviewed page scales
   are sent independently when generating the BOQ.
@@ -109,10 +112,10 @@ specific quantity formulas (e.g., roofing area, door/window counts).
 - Current room detection uses simple contour/rectangle heuristics — for complex
   or curved layouts, consider training a proper CV/ML model (e.g., Detectron2/YOLO)
   on annotated floor plans.
-- Scale detection from text is basic — production systems typically let the user
-  click two reference points of known distance for calibration.
-- Room labeling (e.g., "Bedroom" vs "Kitchen") is currently generic — add OCR-label
-  matching (nearest text to each detected box) for named rooms.
-- MEP (electrical/plumbing) quantity extraction requires additional symbol-detection
-  logic (not included in this base version) — extend `extraction.py` for this.
+- Scale text is only a starting suggestion. The review screen requires
+  two-point calibration for each page before tender export.
+- IFC files can be imported when `ifcopenshell` is installed; confirm model units,
+  item-code mapping, and QS sign-off before export.
+- MEP (electrical/plumbing) symbol extraction is not automatic; trace supported
+  measured elements in the review screen or extend the IFC mapping.
 - Always have a quantity surveyor review AI-generated quantities before tendering.

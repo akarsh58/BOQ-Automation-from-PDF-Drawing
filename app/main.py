@@ -280,6 +280,7 @@ def _reviewed_rooms(raw: Optional[str], pages: list[dict[str, Any]]) -> Optional
 def _make_legacy_workbook(
     path: Path,
     wall_height_m: float,
+    wall_thickness_m: float = 0.23,
     reviewed_rooms: Optional[list[dict[str, Any]]] = None,
     px_per_unit: Optional[float] = None,
     page_scales: Optional[list[float]] = None,
@@ -296,7 +297,7 @@ def _make_legacy_workbook(
             scale = page_scales[room["page"]] if page_scales else (px_per_unit or page["px_per_unit"])
             measured = pixels_to_units((room["x"], room["y"], room["width"], room["height"]), scale)
             measured["name"] = room["name"]
-            all_items.extend(rooms_to_line_items([measured], kb, wall_height_m))
+            all_items.extend(rooms_to_line_items([measured], kb, wall_height_m, wall_thickness_m))
     else:
         for page in pages:
             if page["rooms"]:
@@ -306,7 +307,7 @@ def _make_legacy_workbook(
                     rooms.append(
                         pixels_to_units((room["x"], room["y"], room["width"], room["height"]), scale)
                     )
-                all_items.extend(rooms_to_line_items(rooms, kb, wall_height_m))
+                all_items.extend(rooms_to_line_items(rooms, kb, wall_height_m, wall_thickness_m))
             elif page["dimensions"]:
                 all_items.extend(dimensions_to_line_items(page["dimensions"], kb))
 
@@ -386,12 +387,14 @@ async def preview(file: UploadFile = File(...)):
 async def _generate(
     file: UploadFile,
     wall_height_m: float,
+    wall_thickness_m: float,
     reviewed_rooms: Optional[str],
     px_per_unit: Optional[float],
     page_scales: Optional[str] = None,
     takeoff: Optional[str] = None,
 ):
     wall_height = _number(wall_height_m, "wall_height_m", 0.1, 20)
+    wall_thickness = _number(wall_thickness_m, "wall_thickness_m", 0.01, 2)
     scale = None if px_per_unit is None else _number(px_per_unit, "px_per_unit", 1, 1_000_000)
     path = await _save_upload(file)
     output_path = OUTPUT_DIR / f"generated_boq_{uuid.uuid4().hex}.xlsx"
@@ -425,7 +428,7 @@ async def _generate(
         pages = _page_data(path)
         rooms = _reviewed_rooms(reviewed_rooms, pages)
         scales = _page_scales(page_scales, pages)
-        _make_legacy_workbook(path, wall_height, rooms, scale, scales, pages, output_path)
+        _make_legacy_workbook(path, wall_height, wall_thickness, rooms, scale, scales, pages, output_path)
         return FileResponse(
             output_path,
             filename="generated_boq.xlsx",
@@ -450,23 +453,25 @@ async def generate(
     px_per_unit: Optional[float] = Form(None),
     page_scales: Optional[str] = Form(None),
     wall_height_m: float = Form(3.0),
+    wall_thickness_m: float = Form(0.23),
     takeoff: Optional[str] = Form(None),
 ):
     """Generate a tender workbook from takeoff JSON, or a legacy sheet from reviewed rooms."""
-    return await _generate(file, wall_height_m, reviewed_rooms, px_per_unit, page_scales, takeoff)
+    return await _generate(file, wall_height_m, wall_thickness_m, reviewed_rooms, px_per_unit, page_scales, takeoff)
 
 
 @app.post("/generate-boq")
 async def generate_boq(
     file: UploadFile = File(...),
     wall_height_m: float = Form(3.0),
+    wall_thickness_m: float = Form(0.23),
     reviewed_rooms: Optional[str] = Form(None),
     px_per_unit: Optional[float] = Form(None),
     page_scales: Optional[str] = Form(None),
     takeoff: Optional[str] = Form(None),
 ):
     """Backward-compatible generation endpoint."""
-    return await _generate(file, wall_height_m, reviewed_rooms, px_per_unit, page_scales, takeoff)
+    return await _generate(file, wall_height_m, wall_thickness_m, reviewed_rooms, px_per_unit, page_scales, takeoff)
 
 
 @app.post("/qa-validate")
