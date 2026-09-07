@@ -30,6 +30,12 @@
     canvas { max-width:100%; height:auto; background:white; box-shadow:0 2px 7px #1e293b25; cursor:crosshair; touch-action:none; }
     .help { color:var(--muted); font-size:12px; margin:10px 2px 0; }
     .notice { background:#fff7ed; color:#7a2e0e; border:1px solid #fdc7a0; border-radius:8px; padding:8px 10px; font-size:12px; margin-bottom:10px; }
+    .disclaimer { display:flex; gap:10px; align-items:flex-start; margin-top:18px; padding:13px 15px; border:1px solid #f5c26b; border-radius:10px; background:#fffaeb; color:#7a2e0e; }
+    .disclaimer strong { display:block; margin-bottom:2px; } .disclaimer span { font-size:13px; }
+    .limitations { margin-top:22px; } .limitations h2 { margin:0 0 5px; font-size:18px; } .limitations > p { margin:0 0 13px; color:var(--muted); font-size:13px; }
+    .limitation-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+    .limitation { border:1px solid var(--line); border-radius:10px; padding:14px; background:#fbfdff; }
+    .limitation h3 { margin:0 0 5px; font-size:14px; } .limitation p { margin:0; color:var(--muted); font-size:12px; }
     #elList { max-height:280px; overflow:auto; padding-right:3px; }
     .room { border:1px solid var(--line); border-radius:9px; padding:10px; margin:8px 0; background:#fff; cursor:pointer; }
     .room.selected { border-color:var(--blue); box-shadow:0 0 0 2px #2563eb20; }
@@ -42,7 +48,9 @@
     .check { display:flex; gap:8px; align-items:flex-start; font-size:13px; color:var(--ink); margin:8px 0; }
     .check input { width:auto; margin-top:3px; }
     .badge { font-size:11px; color:#175cd3; background:#eff4ff; border-radius:999px; padding:2px 8px; }
+    @media (max-width:1050px) { .limitation-grid { grid-template-columns:repeat(2,1fr); } }
     @media (max-width:900px) { #workspace { grid-template-columns:1fr; } #elList { max-height:none; } }
+    @media (max-width:560px) { .limitation-grid { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -64,6 +72,34 @@
         <button class="primary" id="reviewBtn" disabled>Load for takeoff</button>
       </div>
       <div id="status" role="status"></div>
+    </section>
+
+    <div class="disclaimer" role="note">
+      <div aria-hidden="true">⚠️</div>
+      <span><strong>QS review required before tendering</strong> BOQ Studio assists with takeoff but does not replace a qualified quantity surveyor. Verify geometry, scale, item codes, rates, deductions, and deficiencies before issuing quantities.</span>
+    </div>
+
+    <section class="limitations" aria-labelledby="limitations-title">
+      <h2 id="limitations-title">Limitations &amp; roadmap</h2>
+      <p>Four known gaps to keep in mind while reviewing an automated takeoff.</p>
+      <div class="limitation-grid">
+        <article class="limitation">
+          <h3>Room detection</h3>
+          <p>Automatic boxes use contour heuristics and work best on clean, rectangular plans. Trace irregular spaces manually.</p>
+        </article>
+        <article class="limitation">
+          <h3>Scale calibration</h3>
+          <p>Printed scale text is only a suggestion. Calibrate every page with two known points before tender export.</p>
+        </article>
+        <article class="limitation">
+          <h3>Named labeling</h3>
+          <p>Room names are not reliably inferred from nearby drawing text yet. Confirm names and element classifications during review.</p>
+        </article>
+        <article class="limitation">
+          <h3>MEP quantities</h3>
+          <p>Electrical and plumbing symbols are not automatically counted. Add supported elements manually or use mapped IFC data.</p>
+        </article>
+      </div>
     </section>
 
     <section id="workspace">
