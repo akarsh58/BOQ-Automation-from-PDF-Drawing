@@ -18,7 +18,10 @@ def classify_room(box_info, index):
     In production, replace with an OCR-label match (e.g., text 'BEDROOM' near box)
     or a trained CV classifier.
     """
-    return f"Room_{index + 1}"
+    # Reviewed rooms may carry a user-edited name. Keep the historical generic
+    # label when the automatic detector did not provide one.
+    name = str(box_info.get("name", "")).strip()
+    return name[:80] if name else f"Room_{index + 1}"
 
 
 def rooms_to_line_items(rooms, kb, wall_height_m=3.0):

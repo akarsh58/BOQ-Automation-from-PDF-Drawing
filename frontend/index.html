@@ -1,55 +1,129 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>BOQ Automation - Upload Drawing</title>
-<style>
-  body { font-family: Arial, sans-serif; max-width: 640px; margin: 60px auto; text-align: center; }
-  .box { border: 2px dashed #888; padding: 40px; border-radius: 10px; }
-  button { padding: 10px 24px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; }
-  button:hover { background: #1d4ed8; }
-  input[type=number] { padding: 6px; width: 80px; }
-  #status { margin-top: 20px; font-weight: bold; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BOQ Studio</title>
+  <style>
+    :root { --ink:#172033; --muted:#667085; --line:#d9e0ea; --blue:#2563eb; --soft:#f4f7fb; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; background:var(--soft); }
+    header { padding:22px max(24px,calc((100vw - 1180px)/2)); background:#10264a; color:white; }
+    header h1 { margin:0; font-size:23px; letter-spacing:-.02em; } header p { margin:3px 0 0; color:#c7d5ed; }
+    main { max-width:1180px; margin:26px auto; padding:0 20px 48px; }
+    .card { background:white; border:1px solid var(--line); border-radius:14px; box-shadow:0 5px 22px #17345b0d; padding:22px; }
+    .upload { display:flex; align-items:center; gap:18px; justify-content:space-between; flex-wrap:wrap; }
+    .drop { flex:1; min-width:250px; border:2px dashed #aab9ce; border-radius:11px; padding:19px; text-align:center; background:#fbfdff; cursor:pointer; }
+    .drop:hover,.drop.ready { border-color:var(--blue); background:#f4f8ff; }
+    input, button { font:inherit; } input[type=number], input[type=text] { border:1px solid var(--line); border-radius:7px; padding:8px 9px; width:100%; }
+    input[type=file] { display:none; } label { color:var(--muted); font-size:13px; } .field { min-width:150px; }
+    button { border:0; border-radius:8px; padding:10px 15px; cursor:pointer; font-weight:650; }
+    button.primary { background:var(--blue); color:#fff; } button.secondary { color:#194da8; background:#eaf1ff; } button.ghost { background:#f1f4f8; color:#39465a; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    #status { margin:17px 2px 0; color:var(--muted); min-height:22px; } #status.error { color:#b42318; }
+    #workspace { display:none; margin-top:22px; grid-template-columns:minmax(0,1fr) 330px; gap:20px; }
+    .toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
+    .toolbar strong { font-size:17px; } .toolbar small { color:var(--muted); }
+    .canvas-wrap { background:#e9eef6; border-radius:10px; padding:12px; overflow:auto; text-align:center; }
+    canvas { max-width:100%; height:auto; background:white; box-shadow:0 2px 7px #1e293b25; cursor:crosshair; }
+    .help { color:var(--muted); font-size:12px; margin:10px 2px 0; }
+    .review-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+    #roomList { max-height:410px; overflow:auto; padding-right:3px; }
+    .room { border:1px solid var(--line); border-radius:9px; padding:10px; margin:8px 0; background:#fff; }
+    .room.selected { border-color:var(--blue); box-shadow:0 0 0 2px #2563eb20; }
+    .room-title { display:flex; align-items:center; gap:7px; margin-bottom:8px; } .room-title input { flex:1; }
+    .room-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; } .room-grid label { font-size:11px; }
+    .room-grid input { padding:5px 6px; font-size:13px; } .remove { color:#b42318; background:none; padding:3px; font-size:12px; }
+    .scale { border-top:1px solid var(--line); margin-top:16px; padding-top:15px; } .scale h3 { margin:0 0 7px; font-size:15px; }
+    .scale p { color:var(--muted); font-size:12px; margin:4px 0 10px; } .actions { display:flex; gap:8px; margin-top:17px; }
+    @media (max-width:850px) { #workspace { grid-template-columns:1fr; } #roomList { max-height:none; } }
+  </style>
 </head>
 <body>
-  <h1>BOQ Automation</h1>
-  <p>Upload a PDF drawing to generate an editable Bill of Quantities (Excel).</p>
-  <div class="box">
-    <input type="file" id="fileInput" accept="application/pdf,image/*"><br><br>
-    <label>Assumed wall height (m): <input type="number" id="wallHeight" value="3.0" step="0.1"></label><br><br>
-    <button onclick="uploadFile()">Generate BOQ</button>
-  </div>
-  <div id="status"></div>
+  <header><h1>BOQ Studio</h1><p>Upload a floor plan, review the detected rooms, and download a priced Excel BOQ.</p></header>
+  <main>
+    <section class="card">
+      <div class="upload">
+        <label class="drop" id="drop">
+          <input id="file" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff">
+          <strong id="fileLabel">Choose a PDF or image</strong><br><small>Automatic room detection starts immediately</small>
+        </label>
+        <div class="field"><label for="wallHeight">Wall height (m)</label><input id="wallHeight" type="number" min=".1" max="20" step=".1" value="3"></div>
+        <button class="primary" id="reviewBtn" disabled>Review drawing</button>
+      </div>
+      <div id="status" role="status"></div>
+    </section>
 
+    <section id="workspace">
+      <div class="card">
+        <div class="toolbar"><div><strong>Visual review</strong><br><small id="pageInfo"></small></div><select id="pageSelect" aria-label="Drawing page"></select></div>
+        <div class="canvas-wrap"><canvas id="canvas"></canvas></div>
+        <p class="help">Drag a rectangle to move it. Edit exact values or names on the right. Drag on empty space to add a room.</p>
+      </div>
+      <aside class="card">
+        <div class="review-head"><strong>Detected rooms</strong><button class="secondary" id="addBtn">+ Add room</button></div>
+        <div id="roomList"></div>
+        <div class="scale"><h3>Scale calibration</h3><p id="scaleHint">Use the detected value, or enter the drawing scale in pixels per metre.</p>
+          <label for="scaleInput">Pixels per metre</label><input id="scaleInput" type="number" min="1" max="1000000" step=".01">
+        </div>
+        <div class="actions"><button class="primary" id="generateBtn">Generate Excel</button><button class="ghost" id="resetBtn">Start over</button></div>
+      </aside>
+    </section>
+  </main>
 <script>
-async function uploadFile() {
-  const fileInput = document.getElementById('fileInput');
-  const wallHeight = document.getElementById('wallHeight').value;
-  const status = document.getElementById('status');
-  if (!fileInput.files.length) { status.innerText = "Please choose a file first."; return; }
+const API = 'http://localhost:8000';
+const $ = id => document.getElementById(id);
+let file, preview, pageIndex = 0, selected = -1, drag = null;
+const canvas = $('canvas'), ctx = canvas.getContext('2d');
 
-  const formData = new FormData();
-  formData.append('file', fileInput.files[0]);
-  formData.append('wall_height_m', wallHeight);
-
-  status.innerText = "Processing drawing... this may take a few seconds.";
-  try {
-    const response = await fetch('http://localhost:8000/generate-boq', { method: 'POST', body: formData });
-    if (!response.ok) throw new Error('Server error: ' + response.status);
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'generated_boq.xlsx';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    status.innerText = "Done! BOQ downloaded.";
-  } catch (err) {
-    status.innerText = "Error: " + err.message;
-  }
+function setStatus(text, error=false) { $('status').textContent=text; $('status').className=error?'error':''; }
+function rooms() { return preview.pages.flatMap(p => p.rooms); }
+function currentRooms() { return preview.pages[pageIndex].rooms; }
+function draw() {
+  if (!preview) return;
+  const p=preview.pages[pageIndex], image=new Image();
+  image.onload=()=> {
+    canvas.width=p.width; canvas.height=p.height; ctx.drawImage(image,0,0);
+    p.rooms.forEach((r,i) => { ctx.fillStyle=i===selected?'#2563eb30':'#20a36a22'; ctx.strokeStyle=i===selected?'#2563eb':'#20a36a'; ctx.lineWidth=Math.max(3,p.width/500); ctx.fillRect(r.x,r.y,r.width,r.height); ctx.strokeRect(r.x,r.y,r.width,r.height); ctx.fillStyle='#122'; ctx.font='bold 16px system-ui'; ctx.fillText(r.name,r.x+6,r.y+20); });
+  }; image.src=p.image;
 }
+function renderRooms() {
+  const list=$('roomList'); list.innerHTML='';
+  currentRooms().forEach((r,i)=>{
+    const el=document.createElement('div'); el.className='room '+(i===selected?'selected':'');
+    el.innerHTML=`<div class="room-title"><input data-k="name" value="${escapeHtml(r.name)}" aria-label="Room name"><button class="remove" title="Remove room">Remove</button></div><div class="room-grid">${['x','y','width','height'].map(k=>`<label>${k}<input data-k="${k}" type="number" min="0" step=".1" value="${r[k]}"></label>`).join('')}</div>`;
+    el.querySelectorAll('input').forEach(input=>input.oninput=()=>{ r[input.dataset.k]=input.dataset.k==='name'?input.value:Number(input.value); selected=i; draw(); });
+    el.querySelector('.remove').onclick=()=>{ preview.pages[pageIndex].rooms.splice(i,1); selected=-1; renderRooms(); draw(); };
+    el.onclick=e=>{ if(e.target.tagName!=='INPUT'&&e.target.tagName!=='BUTTON'){selected=i;renderRooms();draw();} };
+    list.appendChild(el);
+  });
+  $('pageInfo').textContent=`Page ${pageIndex+1} of ${preview.pages.length} · ${rooms().length} rooms`;
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function addRoom(x, y) { const p=preview.pages[pageIndex]; p.rooms.push({id:`p${pageIndex}-r${Date.now()}`,page:pageIndex,name:`Room ${p.rooms.length+1}`,x:Math.max(0,x-80),y:Math.max(0,y-60),width:160,height:120}); selected=p.rooms.length-1; renderRooms(); draw(); }
+
+$('file').onchange=async e=>{ if(!e.target.files.length)return; file=e.target.files[0]; $('fileLabel').textContent=file.name; $('drop').classList.add('ready'); $('reviewBtn').disabled=false; await loadPreview(); };
+$('reviewBtn').onclick=loadPreview;
+async function loadPreview() {
+  if(!file)return; $('reviewBtn').disabled=true; setStatus('Detecting rooms and preparing the review…');
+  const form=new FormData(); form.append('file',file);
+  try { const res=await fetch(`${API}/preview`,{method:'POST',body:form}); const data=await res.json(); if(!res.ok)throw Error(data.detail||`Server error ${res.status}`);
+    preview=data; pageIndex=0; selected=-1; $('pageSelect').innerHTML=data.pages.map((p,i)=>`<option value="${i}">Page ${i+1}</option>`).join('');
+    $('scaleInput').value=data.pages[0].px_per_unit; $('scaleHint').textContent=data.pages[0].scale_detected?'Scale detected from drawing; adjust if needed.':'No scale label found; verify the suggested value.';
+    $('workspace').style.display='grid'; renderRooms(); draw(); setStatus(`Ready — ${data.room_count} room${data.room_count===1?'':'s'} detected. Review before generating.`);
+  } catch(e) { setStatus(e.message,true); } finally { $('reviewBtn').disabled=false; }
+}
+$('pageSelect').onchange=e=>{ pageIndex=Number(e.target.value); selected=-1; $('scaleInput').value=preview.pages[pageIndex].px_per_unit; renderRooms(); draw(); };
+$('scaleInput').oninput=e=>{ const value=Number(e.target.value); if(value>0)preview.pages.forEach(p=>p.px_per_unit=value); };
+$('addBtn').onclick=()=>addRoom(preview.pages[pageIndex].width/2,preview.pages[pageIndex].height/2);
+canvas.onpointerdown=e=>{ if(!preview)return; const r=canvas.getBoundingClientRect(), sx=canvas.width/r.width, sy=canvas.height/r.height, x=(e.clientX-r.left)*sx,y=(e.clientY-r.top)*sy; const hit=currentRooms().map((q,i)=>({q,i})).reverse().find(v=>x>=v.q.x&&x<=v.q.x+v.q.width&&y>=v.q.y&&y<=v.q.y+v.q.height); if(hit){selected=hit.i;drag={x,y,ox:hit.q.x,oy:hit.q.y};renderRooms();draw();canvas.setPointerCapture(e.pointerId);}else{addRoom(x,y);} };
+canvas.onpointermove=e=>{if(!drag)return;const r=canvas.getBoundingClientRect(),x=(e.clientX-r.left)*canvas.width/r.width,y=(e.clientY-r.top)*canvas.height/r.height,q=currentRooms()[selected];q.x=Math.max(0,Math.min(preview.pages[pageIndex].width-q.width,drag.ox+x-drag.x));q.y=Math.max(0,Math.min(preview.pages[pageIndex].height-q.height,drag.oy+y-drag.y));renderRooms();draw();};
+canvas.onpointerup=()=>drag=null;
+$('generateBtn').onclick=async()=>{ if(!file||!preview)return; const value=Number($('scaleInput').value); if(!value||value<1){setStatus('Enter a valid pixels-per-metre scale.',true);return;} $('generateBtn').disabled=true;setStatus('Generating your Excel BOQ…');
+  const form=new FormData();form.append('file',file);form.append('wall_height_m',$('wallHeight').value);form.append('px_per_unit',String(value));form.append('reviewed_rooms',JSON.stringify(rooms()));
+  try { const res=await fetch(`${API}/generate`,{method:'POST',body:form}); if(!res.ok){const d=await res.json().catch(()=>({}));throw Error(d.detail||`Server error ${res.status}`);} const blob=await res.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='generated_boq.xlsx';a.click();URL.revokeObjectURL(url);setStatus('Done — your BOQ Excel file is downloading.'); }catch(e){setStatus(e.message,true);}finally{$('generateBtn').disabled=false;}
+};
+$('resetBtn').onclick=()=>{preview=null;file=null;$('file').value='';$('fileLabel').textContent='Choose a PDF or image';$('workspace').style.display='none';$('reviewBtn').disabled=true;setStatus('');};
 </script>
 </body>
 </html>

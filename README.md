@@ -68,10 +68,18 @@ Check `output/demo_generated_boq.xlsx` for the result.
    ```
    API docs available at http://localhost:8000/docs
 
-2. Open `frontend/index.html` directly in your browser (double-click it).
+2. Open `frontend/index.html` directly in your browser (double-click it), choose
+   a drawing, and click **Review drawing**.
+   The UI calls `POST /preview`, displays the rendered pages and detected room
+   rectangles, and lets you move, resize, rename, add, or remove rooms. Confirm
+   the detected (or manually entered) pixels-per-metre scale, then click
+   **Generate Excel**. The reviewed geometry is sent to `POST /generate` and
+   the Excel file downloads automatically.
 
-3. Upload your PDF drawing, set an assumed wall height, click "Generate BOQ".
-   The Excel file downloads automatically.
+The original `POST /generate-boq` endpoint remains available for one-click
+generation and now also accepts optional `reviewed_rooms`, `px_per_unit`, and
+`wall_height_m` form fields. Uploads are validated (type, size, and decoded
+content) and temporary files are cleaned up after every request.
 
 ## Using your own drawings
 
