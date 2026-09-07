@@ -68,23 +68,10 @@ Check `output/demo_generated_boq.xlsx` for the result.
    ```
    API docs available at http://localhost:8000/docs
 
-2. Open `frontend/index.html` directly in your browser (double-click it), choose
-   a drawing, and click **Review drawing**.
-   The UI calls `POST /preview`, displays the rendered pages and detected room
-   rectangles, and lets you move, resize, rename, add, or remove rooms. Confirm
-   the detected (or manually entered) pixels-per-metre scale, then click
-   **Generate Excel**. The reviewed geometry is sent to `POST /generate` and
-   the Excel file downloads automatically.
+2. Open `frontend/index.html` directly in your browser (double-click it).
 
-The API permits the standalone `file://` frontend and common localhost
-development ports by default. For a deployed frontend, set
-`BOQ_CORS_ORIGINS` to a comma-separated allowlist (for example,
-`https://boq.example.com`) before starting Uvicorn.
-
-The original `POST /generate-boq` endpoint remains available for one-click
-generation and now also accepts optional `reviewed_rooms`, `px_per_unit`, and
-`wall_height_m` form fields. Uploads are validated (type, size, and decoded
-content) and temporary files are cleaned up after every request.
+3. Upload your PDF drawing, set an assumed wall height, click "Generate BOQ".
+   The Excel file downloads automatically.
 
 ## Using your own drawings
 
@@ -94,8 +81,7 @@ content) and temporary files are cleaned up after every request.
 - If room detection picks up noise (too many/few boxes), tune the area thresholds
   in `app/extraction.py` → `detect_rooms_walls()`.
 - If scale is wrong, either add a "SCALE 1:100" text label to your drawing, or
-  manually calibrate each page in the review screen. The reviewed page scales
-  are sent independently when generating the BOQ.
+  manually pass a calibrated `px_per_unit` value in `app/main.py`.
 
 ## Customizing the knowledge base (rates & items)
 

@@ -4,12 +4,26 @@ using the CPWD-style knowledge base (knowledge_base/cpwd_rates.csv).
 """
 import pandas as pd
 import os
+import math
 
 KB_PATH = os.path.join(os.path.dirname(__file__), "..", "knowledge_base", "cpwd_rates.csv")
 
 
 def load_knowledge_base():
-    return pd.read_csv(KB_PATH)
+    if not os.path.isfile(KB_PATH):
+        raise FileNotFoundError(f"Knowledge base not found: {KB_PATH}")
+    kb = pd.read_csv(KB_PATH)
+    required = {"item_code", "description", "unit", "rate_inr"}
+    missing = required.difference(kb.columns)
+    if missing:
+        raise ValueError(f"Knowledge base is missing columns: {', '.join(sorted(missing))}")
+    if kb.empty:
+        raise ValueError("Knowledge base has no rates")
+    kb = kb.copy()
+    kb["rate_inr"] = pd.to_numeric(kb["rate_inr"], errors="coerce")
+    if kb["rate_inr"].isna().any() or (kb["rate_inr"] < 0).any():
+        raise ValueError("Knowledge base contains invalid rates")
+    return kb
 
 
 def classify_room(box_info, index):
@@ -29,16 +43,33 @@ def rooms_to_line_items(rooms, kb, wall_height_m=3.0):
     Convert detected room boxes (with area/width/height) into BOQ line items:
     flooring, plastering, painting, brickwork walls.
     """
+    try:
+        wall_height_m = float(wall_height_m)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("wall_height_m must be a number") from exc
+    if not math.isfinite(wall_height_m) or wall_height_m <= 0:
+        raise ValueError("wall_height_m must be positive")
+
+    def kb_row(code):
+        rows = kb[kb["item_code"] == code]
+        if rows.empty:
+            raise ValueError(f"Knowledge base item {code} is missing")
+        row = rows.iloc[0]
+        return row["description"], row["unit"], float(row["rate_inr"])
+
     items = []
     for i, room in enumerate(rooms):
-        area = room["area"]
-        perimeter = 2 * (room["width"] + room["height"])
+        try:
+            width = float(room["width"])
+            height = float(room["height"])
+            area = float(room["area"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"Room {i + 1} has invalid dimensions") from exc
+        if not all(math.isfinite(value) and value >= 0 for value in (width, height, area)):
+            raise ValueError(f"Room {i + 1} has invalid dimensions")
+        perimeter = 2 * (width + height)
         wall_area = perimeter * wall_height_m
         room_name = classify_room(room, i)
-
-        def kb_row(code):
-            row = kb[kb["item_code"] == code].iloc[0]
-            return row["description"], row["unit"], float(row["rate_inr"])
 
         desc, unit, rate = kb_row(5.1)
         items.append({"room": room_name, "item_code": 5.1, "description": desc,
@@ -69,12 +100,27 @@ def dimensions_to_line_items(dim_list, kb):
     Fallback path: when only raw dimension text (e.g. '3000 x 4000 mm') is found
     (no clean room contours), still generate a basic flooring + painting estimate.
     """
+    def to_meters(value, unit):
+        unit = (unit or "mm").lower()
+        factors = {"mm": 0.001, "cm": 0.01, "m": 1, "ft": 0.3048, "feet": 0.3048}
+        if unit not in factors:
+            raise ValueError(f"Unsupported dimension unit: {unit}")
+        return float(value) * factors[unit]
+
+    rows = kb[kb["item_code"] == 5.1]
+    if rows.empty:
+        raise ValueError("Knowledge base item 5.1 is missing")
+    row = rows.iloc[0]
     items = []
     for i, d in enumerate(dim_list):
-        w = d["width"] / 1000 if d["unit"] == "mm" else d["width"]
-        h = d["height"] / 1000 if d["unit"] == "mm" else d["height"]
+        try:
+            w = to_meters(d["width"], d.get("width_unit", d.get("unit", "mm")))
+            h = to_meters(d["height"], d.get("height_unit", d.get("unit", "mm")))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"Dimension {i + 1} is invalid") from exc
+        if not math.isfinite(w) or not math.isfinite(h) or w <= 0 or h <= 0:
+            raise ValueError(f"Dimension {i + 1} is invalid")
         area = round(w * h, 2)
-        row = kb[kb["item_code"] == 5.1].iloc[0]
         items.append({"room": f"Detected_Dim_{i+1}", "item_code": 5.1,
                       "description": row["description"], "unit": row["unit"],
                       "quantity": area, "rate_inr": float(row["rate_inr"]),

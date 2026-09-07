@@ -25,7 +25,7 @@
     .toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
     .toolbar strong { font-size:17px; } .toolbar small { color:var(--muted); }
     .canvas-wrap { background:#e9eef6; border-radius:10px; padding:12px; overflow:auto; text-align:center; }
-    canvas { max-width:100%; height:auto; background:white; box-shadow:0 2px 7px #1e293b25; cursor:crosshair; }
+    canvas { max-width:100%; height:auto; background:white; box-shadow:0 2px 7px #1e293b25; cursor:crosshair; touch-action:none; }
     .help { color:var(--muted); font-size:12px; margin:10px 2px 0; }
     .review-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
     #roomList { max-height:410px; overflow:auto; padding-right:3px; }
@@ -70,8 +70,8 @@
       </aside>
     </section>
   </main>
-<script>
-const API = 'http://localhost:8000';
+ <script>
+const API = window.BOQ_API || 'http://localhost:8000';
 const $ = id => document.getElementById(id);
 let file, preview, pageIndex = 0, selected = -1, drag = null;
 const canvas = $('canvas'), ctx = canvas.getContext('2d');
@@ -79,51 +79,164 @@ const canvas = $('canvas'), ctx = canvas.getContext('2d');
 function setStatus(text, error=false) { $('status').textContent=text; $('status').className=error?'error':''; }
 function rooms() { return preview.pages.flatMap(p => p.rooms); }
 function currentRooms() { return preview.pages[pageIndex].rooms; }
+function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+function normalizeRoom(room, page) {
+  room.width = clamp(Number(room.width) || 1, 1, page.width);
+  room.height = clamp(Number(room.height) || 1, 1, page.height);
+  room.x = clamp(Number(room.x) || 0, 0, page.width - room.width);
+  room.y = clamp(Number(room.y) || 0, 0, page.height - room.height);
+}
+function pointerPosition(event) {
+  const rect=canvas.getBoundingClientRect();
+  return {x:(event.clientX-rect.left)*canvas.width/rect.width, y:(event.clientY-rect.top)*canvas.height/rect.height};
+}
+function handleAt(room, x, y) {
+  const rect=canvas.getBoundingClientRect(), tolerance=Math.max(8, 12*canvas.width/rect.width);
+  const nearLeft=Math.abs(x-room.x)<=tolerance, nearRight=Math.abs(x-(room.x+room.width))<=tolerance;
+  const nearTop=Math.abs(y-room.y)<=tolerance, nearBottom=Math.abs(y-(room.y+room.height))<=tolerance;
+  const withinX=x>=room.x-tolerance&&x<=room.x+room.width+tolerance;
+  const withinY=y>=room.y-tolerance&&y<=room.y+room.height+tolerance;
+  let handle='';
+  if (nearTop&&withinX) handle+='n';
+  if (nearBottom&&withinX) handle+='s';
+  if (nearLeft&&withinY) handle+='w';
+  if (nearRight&&withinY) handle+='e';
+  return handle || null;
+}
 function draw() {
   if (!preview) return;
   const p=preview.pages[pageIndex], image=new Image();
   image.onload=()=> {
-    canvas.width=p.width; canvas.height=p.height; ctx.drawImage(image,0,0);
-    p.rooms.forEach((r,i) => { ctx.fillStyle=i===selected?'#2563eb30':'#20a36a22'; ctx.strokeStyle=i===selected?'#2563eb':'#20a36a'; ctx.lineWidth=Math.max(3,p.width/500); ctx.fillRect(r.x,r.y,r.width,r.height); ctx.strokeRect(r.x,r.y,r.width,r.height); ctx.fillStyle='#122'; ctx.font='bold 16px system-ui'; ctx.fillText(r.name,r.x+6,r.y+20); });
-  }; image.src=p.image;
+ if (!preview || p !== preview.pages[pageIndex]) return;
+ canvas.width=p.width; canvas.height=p.height; ctx.drawImage(image,0,0);
+ const lineWidth=Math.max(3,p.width/500);
+ p.rooms.forEach((r,i) => {
+   normalizeRoom(r,p);
+   ctx.fillStyle=i===selected?'#2563eb30':'#20a36a22';
+   ctx.strokeStyle=i===selected?'#2563eb':'#20a36a';
+   ctx.lineWidth=lineWidth; ctx.fillRect(r.x,r.y,r.width,r.height); ctx.strokeRect(r.x,r.y,r.width,r.height);
+   ctx.fillStyle='#122'; ctx.font='bold 16px system-ui'; ctx.fillText(r.name,r.x+6,r.y+20);
+   if (i===selected) {
+     ctx.fillStyle='#2563eb';
+     const size=Math.max(8,lineWidth*2);
+     [[r.x,r.y],[r.x+r.width/2,r.y],[r.x+r.width,r.y],[r.x,r.y+r.height/2],
+      [r.x+r.width,r.y+r.height/2],[r.x,r.y+r.height],[r.x+r.width/2,r.y+r.height],[r.x+r.width,r.y+r.height]]
+       .forEach(([x,y])=>ctx.fillRect(x-size/2,y-size/2,size,size));
+   }
+ });
+  };
+  image.src=p.image;
+}
+function syncSelectedInputs() {
+  const item=$('roomList').children[selected];
+  const room=currentRooms()[selected];
+  if (!item || !room) return;
+  item.querySelectorAll('input[data-k]').forEach(input => { input.value=room[input.dataset.k]; });
 }
 function renderRooms() {
-  const list=$('roomList'); list.innerHTML='';
-  currentRooms().forEach((r,i)=>{
-    const el=document.createElement('div'); el.className='room '+(i===selected?'selected':'');
-    el.innerHTML=`<div class="room-title"><input data-k="name" value="${escapeHtml(r.name)}" aria-label="Room name"><button class="remove" title="Remove room">Remove</button></div><div class="room-grid">${['x','y','width','height'].map(k=>`<label>${k}<input data-k="${k}" type="number" min="0" step=".1" value="${r[k]}"></label>`).join('')}</div>`;
-    el.querySelectorAll('input').forEach(input=>input.oninput=()=>{ r[input.dataset.k]=input.dataset.k==='name'?input.value:Number(input.value); selected=i; draw(); });
-    el.querySelector('.remove').onclick=()=>{ preview.pages[pageIndex].rooms.splice(i,1); selected=-1; renderRooms(); draw(); };
-    el.onclick=e=>{ if(e.target.tagName!=='INPUT'&&e.target.tagName!=='BUTTON'){selected=i;renderRooms();draw();} };
-    list.appendChild(el);
+  const list=$('roomList'); list.replaceChildren();
+  currentRooms().forEach((room,index)=>{
+ const el=document.createElement('div'); el.className='room '+(index===selected?'selected':'');
+ const title=document.createElement('div'); title.className='room-title';
+ const name=document.createElement('input'); name.type='text'; name.value=room.name; name.dataset.k='name'; name.setAttribute('aria-label','Room name');
+ const remove=document.createElement('button'); remove.className='remove'; remove.type='button'; remove.title='Remove room'; remove.textContent='Remove';
+ title.append(name,remove);
+ const grid=document.createElement('div'); grid.className='room-grid';
+ ['x','y','width','height'].forEach(key=>{
+   const label=document.createElement('label'); label.textContent=key;
+   const input=document.createElement('input'); input.dataset.k=key; input.type='number'; input.step='.1'; input.value=room[key];
+   input.min=key==='width'||key==='height'?'1':'0'; label.appendChild(input); grid.appendChild(label);
+   input.oninput=()=> {
+     const value=Number(input.value);
+     if (!Number.isFinite(value)) return;
+     room[key]=key==='width'||key==='height'?Math.max(1,value):Math.max(0,value);
+     selected=index; draw();
+   };
+   input.onchange=()=>{ normalizeRoom(room,preview.pages[pageIndex]); renderRooms(); draw(); };
+ });
+ name.oninput=()=>{ room.name=name.value; selected=index; draw(); };
+ remove.onclick=()=>{ currentRooms().splice(index,1); selected=-1; renderRooms(); draw(); };
+ el.onclick=event=>{ if(event.target!==name&&event.target!==remove&&event.target.tagName!=='INPUT'){selected=index;renderRooms();draw();} };
+ el.append(title,grid); list.appendChild(el);
   });
   $('pageInfo').textContent=`Page ${pageIndex+1} of ${preview.pages.length} · ${rooms().length} rooms`;
 }
-function escapeHtml(s) { return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-function addRoom(x, y) { const p=preview.pages[pageIndex]; p.rooms.push({id:`p${pageIndex}-r${Date.now()}`,page:pageIndex,name:`Room ${p.rooms.length+1}`,x:Math.max(0,x-80),y:Math.max(0,y-60),width:160,height:120}); selected=p.rooms.length-1; renderRooms(); draw(); }
-
+function addRoom(x, y) {
+  const p=preview.pages[pageIndex], width=Math.min(160,p.width), height=Math.min(120,p.height);
+  const room={id:`p${pageIndex}-r${Date.now()}`,page:pageIndex,name:`Room ${p.rooms.length+1}`,x:x-width/2,y:y-height/2,width,height};
+  normalizeRoom(room,p); p.rooms.push(room); selected=p.rooms.length-1; renderRooms(); draw();
+}
+async function responseError(response) {
+  const text=await response.text();
+  try { const data=JSON.parse(text); return data.detail||`Server error ${response.status}`; }
+  catch (_) { return text||`Server error ${response.status}`; }
+}
 $('file').onchange=async e=>{ if(!e.target.files.length)return; file=e.target.files[0]; $('fileLabel').textContent=file.name; $('drop').classList.add('ready'); $('reviewBtn').disabled=false; await loadPreview(); };
 $('reviewBtn').onclick=loadPreview;
 async function loadPreview() {
   if(!file)return; $('reviewBtn').disabled=true; setStatus('Detecting rooms and preparing the review…');
   const form=new FormData(); form.append('file',file);
-  try { const res=await fetch(`${API}/preview`,{method:'POST',body:form}); const data=await res.json(); if(!res.ok)throw Error(data.detail||`Server error ${res.status}`);
-    preview=data; pageIndex=0; selected=-1; $('pageSelect').innerHTML=data.pages.map((p,i)=>`<option value="${i}">Page ${i+1}</option>`).join('');
-    $('scaleInput').value=data.pages[0].px_per_unit; $('scaleHint').textContent=data.pages[0].scale_detected?'Scale detected from drawing; adjust if needed.':'No scale label found; verify the suggested value.';
-    $('workspace').style.display='grid'; renderRooms(); draw(); setStatus(`Ready — ${data.room_count} room${data.room_count===1?'':'s'} detected. Review before generating.`);
-  } catch(e) { setStatus(e.message,true); } finally { $('reviewBtn').disabled=false; }
+  try {
+ const response=await fetch(`${API}/preview`,{method:'POST',body:form});
+ if(!response.ok) throw Error(await responseError(response));
+ const data=await response.json();
+ if(!Array.isArray(data.pages)||!data.pages.length) throw Error('The server returned no readable pages.');
+ preview=data; pageIndex=0; selected=-1;
+ const select=$('pageSelect'); select.replaceChildren();
+ data.pages.forEach((_,i)=>{ const option=document.createElement('option'); option.value=i; option.textContent=`Page ${i+1}`; select.appendChild(option); });
+ preview.pages.forEach((page,i)=>{ page.px_per_unit=Number((data.page_scales||[])[i]||page.px_per_unit); });
+ $('scaleInput').value=preview.pages[0].px_per_unit;
+ $('scaleHint').textContent=preview.pages[0].scale_detected?'Scale detected from drawing; adjust if needed.':'No scale label found; verify the suggested value.';
+ $('workspace').style.display='grid'; renderRooms(); draw();
+ setStatus(`Ready — ${data.room_count} room${data.room_count===1?'':'s'} detected. Review before generating.`);
+  } catch(e) { setStatus(e.message||'Could not load the drawing.',true); } finally { $('reviewBtn').disabled=false; }
 }
-$('pageSelect').onchange=e=>{ pageIndex=Number(e.target.value); selected=-1; $('scaleInput').value=preview.pages[pageIndex].px_per_unit; renderRooms(); draw(); };
-$('scaleInput').oninput=e=>{ const value=Number(e.target.value); if(value>0)preview.pages.forEach(p=>p.px_per_unit=value); };
+$('pageSelect').onchange=e=>{ pageIndex=Number(e.target.value); selected=-1; $('scaleInput').value=preview.pages[pageIndex].px_per_unit; $('scaleHint').textContent=preview.pages[pageIndex].scale_detected?'Scale detected from drawing; adjust if needed.':'No scale label found; verify the suggested value.'; renderRooms(); draw(); };
+$('scaleInput').oninput=e=>{ const value=Number(e.target.value); if(Number.isFinite(value)&&value>0)preview.pages[pageIndex].px_per_unit=value; };
 $('addBtn').onclick=()=>addRoom(preview.pages[pageIndex].width/2,preview.pages[pageIndex].height/2);
-canvas.onpointerdown=e=>{ if(!preview)return; const r=canvas.getBoundingClientRect(), sx=canvas.width/r.width, sy=canvas.height/r.height, x=(e.clientX-r.left)*sx,y=(e.clientY-r.top)*sy; const hit=currentRooms().map((q,i)=>({q,i})).reverse().find(v=>x>=v.q.x&&x<=v.q.x+v.q.width&&y>=v.q.y&&y<=v.q.y+v.q.height); if(hit){selected=hit.i;drag={x,y,ox:hit.q.x,oy:hit.q.y};renderRooms();draw();canvas.setPointerCapture(e.pointerId);}else{addRoom(x,y);} };
-canvas.onpointermove=e=>{if(!drag)return;const r=canvas.getBoundingClientRect(),x=(e.clientX-r.left)*canvas.width/r.width,y=(e.clientY-r.top)*canvas.height/r.height,q=currentRooms()[selected];q.x=Math.max(0,Math.min(preview.pages[pageIndex].width-q.width,drag.ox+x-drag.x));q.y=Math.max(0,Math.min(preview.pages[pageIndex].height-q.height,drag.oy+y-drag.y));renderRooms();draw();};
-canvas.onpointerup=()=>drag=null;
-$('generateBtn').onclick=async()=>{ if(!file||!preview)return; const value=Number($('scaleInput').value); if(!value||value<1){setStatus('Enter a valid pixels-per-metre scale.',true);return;} $('generateBtn').disabled=true;setStatus('Generating your Excel BOQ…');
-  const form=new FormData();form.append('file',file);form.append('wall_height_m',$('wallHeight').value);form.append('px_per_unit',String(value));form.append('reviewed_rooms',JSON.stringify(rooms()));
-  try { const res=await fetch(`${API}/generate`,{method:'POST',body:form}); if(!res.ok){const d=await res.json().catch(()=>({}));throw Error(d.detail||`Server error ${res.status}`);} const blob=await res.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='generated_boq.xlsx';a.click();URL.revokeObjectURL(url);setStatus('Done — your BOQ Excel file is downloading.'); }catch(e){setStatus(e.message,true);}finally{$('generateBtn').disabled=false;}
+canvas.onpointerdown=e=>{
+  if(!preview)return;
+  const {x,y}=pointerPosition(e);
+  const hit=currentRooms().map((room,index)=>({room,index})).reverse().find(v=>x>=v.room.x&&x<=v.room.x+v.room.width&&y>=v.room.y&&y<=v.room.y+v.room.height);
+  if(hit){
+ selected=hit.index; const mode=handleAt(hit.room,x,y)||'move';
+ drag={mode,startX:x,startY:y,start:{...hit.room}}; renderRooms(); draw(); canvas.setPointerCapture(e.pointerId);
+  } else addRoom(x,y);
 };
-$('resetBtn').onclick=()=>{preview=null;file=null;$('file').value='';$('fileLabel').textContent='Choose a PDF or image';$('workspace').style.display='none';$('reviewBtn').disabled=true;setStatus('');};
-</script>
+canvas.onpointermove=e=>{
+  if(!drag)return;
+  const p=preview.pages[pageIndex], room=currentRooms()[selected]; if(!room){drag=null;return;}
+  const {x,y}=pointerPosition(e), dx=x-drag.startX, dy=y-drag.startY, start=drag.start;
+  if(drag.mode==='move'){ room.x=clamp(start.x+dx,0,p.width-start.width); room.y=clamp(start.y+dy,0,p.height-start.height); }
+  else {
+ if(drag.mode.includes('e')) room.width=clamp(start.width+dx,1,p.width-start.x);
+ if(drag.mode.includes('s')) room.height=clamp(start.height+dy,1,p.height-start.y);
+ if(drag.mode.includes('w')) { const right=start.x+start.width; room.x=clamp(start.x+dx,0,right-1); room.width=right-room.x; }
+ if(drag.mode.includes('n')) { const bottom=start.y+start.height; room.y=clamp(start.y+dy,0,bottom-1); room.height=bottom-room.y; }
+  }
+  syncSelectedInputs(); draw();
+};
+function endDrag(e){ if(drag&&e&&canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId); drag=null; }
+canvas.onpointerup=endDrag; canvas.onpointercancel=endDrag; canvas.onpointerleave=()=>{ if(drag) draw(); };
+$('generateBtn').onclick=async()=>{
+  if(!file||!preview)return;
+  const wallHeight=Number($('wallHeight').value);
+  if(!Number.isFinite(wallHeight)||wallHeight<.1||wallHeight>20){setStatus('Enter a wall height between 0.1 and 20 metres.',true);return;}
+  if(rooms().some(room=>{const p=preview.pages[room.page]; normalizeRoom(room,p); return room.width<1||room.height<1;})){setStatus('Review room dimensions before generating.',true);return;}
+  $('generateBtn').disabled=true; setStatus('Generating your Excel BOQ…');
+  const form=new FormData(); form.append('file',file); form.append('wall_height_m',String(wallHeight));
+  form.append('px_per_unit',String(preview.pages[0].px_per_unit)); form.append('page_scales',JSON.stringify(preview.pages.map(page=>page.px_per_unit)));
+  form.append('reviewed_rooms',JSON.stringify(rooms()));
+  try {
+ const response=await fetch(`${API}/generate`,{method:'POST',body:form});
+ if(!response.ok) throw Error(await responseError(response));
+ const blob=await response.blob(), url=URL.createObjectURL(blob), anchor=document.createElement('a');
+ anchor.href=url; anchor.download='generated_boq.xlsx'; document.body.appendChild(anchor); anchor.click(); anchor.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),1000); setStatus('Done — your BOQ Excel file is downloading.');
+  } catch(e) { setStatus(e.message||'Could not generate the BOQ.',true); }
+  finally {$('generateBtn').disabled=false;}
+};
+$('resetBtn').onclick=()=>{preview=null;file=null;drag=null;$('file').value='';$('fileLabel').textContent='Choose a PDF or image';$('drop').classList.remove('ready');$('workspace').style.display='none';$('reviewBtn').disabled=true;setStatus('');};
+ </script>
 </body>
 </html>

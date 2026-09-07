@@ -4,28 +4,45 @@ Uses pdfplumber for vector PDFs, PyMuPDF for rendering pages to images,
 pytesseract for OCR on scans, and OpenCV for wall/room shape detection.
 """
 import re
+
 import fitz  # PyMuPDF
 import pdfplumber
 import pytesseract
 import cv2
 import numpy as np
 from PIL import Image
-import io
 
-DIM_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(mm|m|ft|feet|cm)?\s*[xX]\s*(\d+(?:\.\d+)?)\s*(mm|m|ft|feet|cm)?")
+DIM_PATTERN = re.compile(
+    r"(?<![\w.])(\d+(?:\.\d+)?)\s*(mm|m|ft|feet|cm)?\s*[x×]\s*"
+    r"(\d+(?:\.\d+)?)\s*(mm|m|ft|feet|cm)?(?![\w.])",
+    re.IGNORECASE,
+)
 NUM_PATTERN = re.compile(r"\d+(?:\.\d+)?")
+MAX_PDF_PAGES = 50
+MAX_RENDER_PIXELS = 60_000_000
 
 
-def pdf_to_images(pdf_path, dpi=200):
+def pdf_to_images(pdf_path, dpi=200, max_pages=MAX_PDF_PAGES):
     """Render each PDF page to a numpy image array (for OpenCV) using PyMuPDF."""
+    if dpi <= 0:
+        raise ValueError("dpi must be positive")
     doc = fitz.open(pdf_path)
     images = []
-    for page in doc:
+    try:
+        if len(doc) > max_pages:
+            raise ValueError(f"PDFs with more than {max_pages} pages are not supported")
         zoom = dpi / 72
         mat = fitz.Matrix(zoom, zoom)
-        pix = page.get_pixmap(matrix=mat)
-        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-        images.append(np.array(img))
+        for page in doc:
+            rect = page.rect
+            estimated_pixels = int(rect.width * zoom) * int(rect.height * zoom)
+            if estimated_pixels > MAX_RENDER_PIXELS:
+                raise ValueError("A PDF page is too large to render safely")
+            pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB, alpha=False)
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            images.append(np.array(img))
+    finally:
+        doc.close()
     return images
 
 
@@ -52,8 +69,18 @@ def find_dimension_strings(text):
     dims = []
     for m in matches:
         w, wu, h, hu = m
-        unit = wu or hu or "mm"
-        dims.append({"width": float(w), "height": float(h), "unit": unit})
+        width_unit = (wu or hu or "mm").lower()
+        height_unit = (hu or wu or "mm").lower()
+        unit = width_unit if width_unit == height_unit else ""
+        dims.append(
+            {
+                "width": float(w),
+                "height": float(h),
+                "unit": unit or width_unit,
+                "width_unit": width_unit,
+                "height_unit": height_unit,
+            }
+        )
     return dims
 
 
@@ -81,7 +108,11 @@ def detect_rooms_walls(image):
 
 def pixels_to_units(box, px_per_unit, unit="m"):
     """Convert a pixel bounding box to real-world width/height using a scale factor."""
+    if not np.isfinite(px_per_unit) or px_per_unit <= 0:
+        raise ValueError("px_per_unit must be a positive finite number")
     x, y, w, h = box
+    if w < 0 or h < 0:
+        raise ValueError("box dimensions must not be negative")
     return {
         "width": round(w / px_per_unit, 2),
         "height": round(h / px_per_unit, 2),
@@ -105,10 +136,16 @@ def estimate_scale_from_text(text, default_px_per_unit=50, render_dpi=200, drawi
     production, prefer manual calibration: let the user click two points of
     known real-world distance on the rendered image.
     """
+    if render_dpi <= 0 or drawing_dpi <= 0:
+        raise ValueError("DPI values must be positive")
+    if default_px_per_unit <= 0:
+        raise ValueError("default_px_per_unit must be positive")
     dpi_ratio = render_dpi / drawing_dpi
-    m = re.search(r"SCALE\s*1\s*[:/]\s*(\d+)", text.upper())
+    m = re.search(r"\bSCALE\s*1\s*[:/]\s*(\d+(?:\.\d+)?)\b", text, re.IGNORECASE)
     if m:
-        ratio = int(m.group(1))
+        ratio = float(m.group(1))
+        if ratio <= 0:
+            return default_px_per_unit * dpi_ratio
         base_px_per_unit = default_px_per_unit / (ratio / 100)
     else:
         base_px_per_unit = default_px_per_unit
