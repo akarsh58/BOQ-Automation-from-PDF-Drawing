@@ -18,6 +18,11 @@ DIM_PATTERN = re.compile(
     re.IGNORECASE,
 )
 NUM_PATTERN = re.compile(r"\d+(?:\.\d+)?")
+ROOM_LABEL_PATTERN = re.compile(
+    r"\b(?:bedroom|living(?:\s+room)?|dining(?:\s+room)?|kitchen|toilet|bathroom|"
+    r"wc|store|study|office|lobby|corridor|passage|balcony|verandah|utility|room)\b",
+    re.IGNORECASE,
+)
 MAX_PDF_PAGES = 50
 MAX_RENDER_PIXELS = 60_000_000
 
@@ -61,6 +66,57 @@ def extract_text_ocr(image):
     gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
     gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
     return pytesseract.image_to_string(gray)
+
+
+def extract_room_labels(image):
+    """Extract recognised room labels and their image positions for box matching."""
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    data = pytesseract.image_to_data(gray, config="--psm 11", output_type=pytesseract.Output.DICT)
+    labels = []
+    for index, raw_text in enumerate(data.get("text", [])):
+        text = " ".join(str(raw_text).split())
+        if not text or not ROOM_LABEL_PATTERN.search(text):
+            continue
+        try:
+            confidence = float(data["conf"][index])
+            x = int(data["left"][index])
+            y = int(data["top"][index])
+            width = int(data["width"][index])
+            height = int(data["height"][index])
+        except (KeyError, TypeError, ValueError, IndexError):
+            continue
+        if confidence >= 0 and width > 0 and height > 0:
+            labels.append(
+                {
+                    "text": text[:80],
+                    "x": x,
+                    "y": y,
+                    "width": width,
+                    "height": height,
+                    "confidence": round(min(confidence / 100, 1), 3),
+                }
+            )
+    return labels
+
+
+def assign_room_labels(boxes, labels):
+    """Match OCR room labels whose centres fall inside detected room boxes."""
+    assignments = []
+    for box in boxes:
+        x, y, width, height = box
+        candidates = []
+        for label in labels:
+            label_x = label["x"] + label["width"] / 2
+            label_y = label["y"] + label["height"] / 2
+            if x <= label_x <= x + width and y <= label_y <= y + height:
+                distance = ((label_x - (x + width / 2)) ** 2 + (label_y - (y + height / 2)) ** 2) ** 0.5
+                candidates.append((distance, label))
+        if candidates:
+            _, label = min(candidates, key=lambda candidate: (candidate[0], -candidate[1]["confidence"]))
+            assignments.append({"name": label["text"], "confidence": label["confidence"]})
+        else:
+            assignments.append({"name": "", "confidence": 0.0})
+    return assignments
 
 
 def find_dimension_strings(text):

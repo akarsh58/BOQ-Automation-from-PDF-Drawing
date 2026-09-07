@@ -93,7 +93,7 @@
         </article>
         <article class="limitation">
           <h3>Named labeling</h3>
-          <p>Room names are not reliably inferred from nearby drawing text yet. Confirm names and element classifications during review.</p>
+          <p>OCR suggests names when recognised text falls inside a detected space. Confirm names and classifications during review.</p>
         </article>
         <article class="limitation">
           <h3>MEP quantities</h3>
@@ -320,6 +320,11 @@ function renderList(){
     const name=document.createElement('input'); name.type='text'; name.value=el.name||''; name.oninput=()=>{el.name=name.value; draw();};
     const remove=document.createElement('button'); remove.className='remove'; remove.type='button'; remove.textContent='Remove';
     remove.onclick=()=>{ page().elements=elements().filter(e=>e.id!==el.id); if(selectedId===el.id) selectedId=null; renderList(); draw(); };
+    if(el.type==='space' && el.confidence){
+      const confidence=document.createElement('span'); confidence.className='badge';
+      confidence.textContent=`${Math.round(el.confidence*100)}% label`;
+      title.append(confidence);
+    }
     title.append(name, remove);
     const grid=document.createElement('div'); grid.className='room-grid';
     const addField=(label,key,step,opts)=>{

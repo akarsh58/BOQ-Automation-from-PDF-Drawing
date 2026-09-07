@@ -317,6 +317,26 @@ def _opening_area(opening: MeasuredElement) -> Optional[float]:
     return None
 
 
+def _point_to_polyline_distance(point: tuple[float, float], points: list[tuple[float, float]]) -> float:
+    if not points:
+        return float("inf")
+    if len(points) == 1:
+        return math.hypot(point[0] - points[0][0], point[1] - points[0][1])
+    distances = []
+    for start, end in zip(points, points[1:]):
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        length_squared = dx * dx + dy * dy
+        if length_squared == 0:
+            distances.append(math.hypot(point[0] - start[0], point[1] - start[1]))
+            continue
+        position = ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / length_squared
+        position = max(0.0, min(1.0, position))
+        nearest = (start[0] + position * dx, start[1] + position * dy)
+        distances.append(math.hypot(point[0] - nearest[0], point[1] - nearest[1]))
+    return min(distances)
+
+
 def _deduct_openings(wall: MeasuredElement, openings: list[MeasuredElement]) -> tuple[float, float, list[str]]:
     """Return (area_m2 deducted, volume_m3 deducted, notes) with enhanced IS 1200 compliance."""
     area_deduct = 0.0
@@ -326,6 +346,14 @@ def _deduct_openings(wall: MeasuredElement, openings: list[MeasuredElement]) -> 
     for opening in openings:
         if opening.host_id != wall.id:
             continue
+        if wall.centerline_m and opening.centerline_m:
+            distance = _point_to_polyline_distance(opening.centerline_m[0], wall.centerline_m)
+            tolerance = max(thickness, 0.15)
+            if distance > tolerance:
+                notes.append(
+                    f"{opening.id} is {distance:.3f} m from host wall (>{tolerance:.3f} m); not deducted"
+                )
+                continue
         area = _opening_area(opening)
         if area is None:
             notes.append(f"opening {opening.id} missing width/height")
@@ -378,6 +406,8 @@ def measure_takeoff(doc: TakeoffDocument, kb: pd.DataFrame) -> tuple[list[Measur
         breadth: Optional[float] = None,
         depth: Optional[float] = None,
         override_code: Optional[float] = None,
+        gross_quantity: Optional[float] = None,
+        wastage_percent: Optional[float] = None,
     ) -> None:
         nonlocal seq
         code = override_code if override_code is not None else DEFAULT_ITEM_CODES.get(code_key)
@@ -397,6 +427,13 @@ def measure_takeoff(doc: TakeoffDocument, kb: pd.DataFrame) -> tuple[list[Measur
                 breadth=round(breadth, 3) if breadth is not None else None,
                 depth=round(depth, 3) if depth is not None else None,
                 quantity=round(quantity, 3),
+                gross_quantity=round(gross_quantity, 3) if gross_quantity is not None else None,
+                wastage_quantity=(
+                    round(quantity - gross_quantity, 3)
+                    if gross_quantity is not None and wastage_percent is not None
+                    else None
+                ),
+                wastage_percent=wastage_percent,
                 is1200_note=note,
                 provisional=provisional,
                 source=element.source,
@@ -487,6 +524,8 @@ def measure_takeoff(doc: TakeoffDocument, kb: pd.DataFrame) -> tuple[list[Measur
             breadth=thickness,
             depth=height,
             override_code=wall.item_code or DEFAULT_ITEM_CODES["wall"],
+            gross_quantity=net_vol,
+            wastage_percent=IS1200_BRICKWORK_WASTAGE_PERCENT,
         )
 
         hosts = [sid for sid in wall.host_space_ids if sid in by_id]
@@ -602,6 +641,8 @@ def measure_takeoff(doc: TakeoffDocument, kb: pd.DataFrame) -> tuple[list[Measur
             breadth=footing.width_m,
             depth=_finite_positive(depth),
             override_code=footing.item_code or DEFAULT_ITEM_CODES["footing"],
+            gross_quantity=volume,
+            wastage_percent=IS1200_CONCRETE_WASTAGE_PERCENT,
         )
 
     for column in columns:
@@ -634,6 +675,8 @@ def measure_takeoff(doc: TakeoffDocument, kb: pd.DataFrame) -> tuple[list[Measur
             breadth=column.thickness_m or column.length_m,
             depth=_finite_positive(height),
             override_code=column.item_code or DEFAULT_ITEM_CODES["column"],
+            gross_quantity=float(volume),
+            wastage_percent=IS1200_CONCRETE_WASTAGE_PERCENT,
         )
 
     for beam in beams:
@@ -663,6 +706,8 @@ def measure_takeoff(doc: TakeoffDocument, kb: pd.DataFrame) -> tuple[list[Measur
             breadth=_finite_positive(width),
             depth=_finite_positive(depth),
             override_code=beam.item_code or DEFAULT_ITEM_CODES["beam"],
+            gross_quantity=float(volume),
+            wastage_percent=IS1200_CONCRETE_WASTAGE_PERCENT,
         )
 
     for slab in slabs:
@@ -689,6 +734,8 @@ def measure_takeoff(doc: TakeoffDocument, kb: pd.DataFrame) -> tuple[list[Measur
             breadth=_finite_positive(area),
             depth=_finite_positive(depth),
             override_code=slab.item_code or DEFAULT_ITEM_CODES["slab"],
+            gross_quantity=float(volume),
+            wastage_percent=IS1200_CONCRETE_WASTAGE_PERCENT,
         )
 
     excavation_volume = 0.0
@@ -777,6 +824,8 @@ def record_qa_review(doc: TakeoffDocument, reviewer: str, status: str, comments:
     if comments is None:
         comments = []
     
+    previous_status = doc.qa_status
+
     # Update current QA status
     doc.qa_status = status
     doc.qa_reviewer = reviewer
@@ -789,7 +838,7 @@ def record_qa_review(doc: TakeoffDocument, reviewer: str, status: str, comments:
         "reviewer": reviewer,
         "status": status,
         "comments": comments,
-        "qa_status_before": doc.qa_status,
+        "qa_status_before": previous_status,
     }
     doc.revision_history.append(revision)
     

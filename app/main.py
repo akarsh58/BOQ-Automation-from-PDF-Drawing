@@ -27,6 +27,8 @@ from app.extraction import (
     detect_rooms_walls,
     estimate_scale_from_text,
     extract_text_ocr,
+    extract_room_labels,
+    assign_room_labels,
     extract_text_vector,
     find_dimension_strings,
     pdf_to_images,
@@ -123,12 +125,20 @@ def _encode_preview_image(image: np.ndarray) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(encoded.tobytes()).decode("ascii")
 
 
-def _draft_space_from_box(page_index: int, room_index: int, box, px_per_unit: float) -> dict[str, Any]:
+def _draft_space_from_box(
+    page_index: int,
+    room_index: int,
+    box,
+    px_per_unit: float,
+    name: str = "",
+    confidence: float = 0.0,
+) -> dict[str, Any]:
     x, y, width, height = box
     return {
         "id": f"p{page_index}-r{room_index + 1}",
         "type": "space",
-        "name": f"Room {room_index + 1}",
+        "name": name or f"Room {room_index + 1}",
+        "confidence": confidence,
         "source": "2d",
         "page": page_index,
         "points": [
@@ -176,15 +186,24 @@ def _page_data(path: Path) -> list[dict[str, Any]]:
                 text = ""
         px_per_unit = estimate_scale_from_text(text, render_dpi=RENDER_DPI)
         boxes = detect_rooms_walls(image)
+        try:
+            room_labels = extract_room_labels(image)
+        except Exception:
+            room_labels = []
+        sorted_boxes = sorted(boxes, key=lambda b: (b[1], b[0]))
+        label_assignments = assign_room_labels(sorted_boxes, room_labels)
         rooms = []
         elements = []
-        for room_index, box in enumerate(sorted(boxes, key=lambda b: (b[1], b[0]))):
+        for room_index, box in enumerate(sorted_boxes):
             x, y, width, height = box
+            assignment = label_assignments[room_index]
+            room_name = assignment["name"] or f"Room {room_index + 1}"
             rooms.append(
                 {
                     "id": f"p{page_index}-r{room_index + 1}",
                     "page": page_index,
-                    "name": f"Room {room_index + 1}",
+                    "name": room_name,
+                    "confidence": assignment["confidence"],
                     "x": int(x),
                     "y": int(y),
                     "width": int(width),
@@ -193,7 +212,16 @@ def _page_data(path: Path) -> list[dict[str, Any]]:
                     "height_m": round(height / px_per_unit, 2),
                 }
             )
-            elements.append(_draft_space_from_box(page_index, room_index, box, px_per_unit))
+            elements.append(
+                _draft_space_from_box(
+                    page_index,
+                    room_index,
+                    box,
+                    px_per_unit,
+                    room_name,
+                    assignment["confidence"],
+                )
+            )
         pages.append(
             {
                 "page": page_index,
@@ -428,6 +456,16 @@ async def _generate(
         pages = _page_data(path)
         rooms = _reviewed_rooms(reviewed_rooms, pages)
         scales = _page_scales(page_scales, pages)
+        if rooms is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Review and submit the detected or manually traced rooms before generating a BOQ.",
+            )
+        if scales is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Calibrate every drawing page and submit page_scales before generating a BOQ.",
+            )
         _make_legacy_workbook(path, wall_height, wall_thickness, rooms, scale, scales, pages, output_path)
         return FileResponse(
             output_path,

@@ -126,6 +126,9 @@ class MeasurementLine:
     depth: Optional[float]
     quantity: float
     is1200_note: str
+    gross_quantity: Optional[float] = None
+    wastage_quantity: Optional[float] = None
+    wastage_percent: Optional[float] = None
     provisional: bool = False
     source: str = "2d"
     location: str = ""
