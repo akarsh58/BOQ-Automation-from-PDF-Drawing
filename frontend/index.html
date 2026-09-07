@@ -3,240 +3,468 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BOQ Studio</title>
+  <title>BOQ Studio — tender takeoff</title>
   <style>
-    :root { --ink:#172033; --muted:#667085; --line:#d9e0ea; --blue:#2563eb; --soft:#f4f7fb; }
+    :root { --ink:#172033; --muted:#667085; --line:#d9e0ea; --blue:#2563eb; --soft:#f4f7fb; --warn:#b54708; }
     * { box-sizing:border-box; }
     body { margin:0; color:var(--ink); font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; background:var(--soft); }
-    header { padding:22px max(24px,calc((100vw - 1180px)/2)); background:#10264a; color:white; }
+    header { padding:22px max(24px,calc((100vw - 1280px)/2)); background:#10264a; color:white; }
     header h1 { margin:0; font-size:23px; letter-spacing:-.02em; } header p { margin:3px 0 0; color:#c7d5ed; }
-    main { max-width:1180px; margin:26px auto; padding:0 20px 48px; }
+    main { max-width:1280px; margin:26px auto; padding:0 20px 48px; }
     .card { background:white; border:1px solid var(--line); border-radius:14px; box-shadow:0 5px 22px #17345b0d; padding:22px; }
-    .upload { display:flex; align-items:center; gap:18px; justify-content:space-between; flex-wrap:wrap; }
+    .upload { display:flex; align-items:flex-end; gap:14px; justify-content:space-between; flex-wrap:wrap; }
     .drop { flex:1; min-width:250px; border:2px dashed #aab9ce; border-radius:11px; padding:19px; text-align:center; background:#fbfdff; cursor:pointer; }
     .drop:hover,.drop.ready { border-color:var(--blue); background:#f4f8ff; }
-    input, button { font:inherit; } input[type=number], input[type=text] { border:1px solid var(--line); border-radius:7px; padding:8px 9px; width:100%; }
-    input[type=file] { display:none; } label { color:var(--muted); font-size:13px; } .field { min-width:150px; }
+    input, button, select { font:inherit; } input[type=number], input[type=text], select { border:1px solid var(--line); border-radius:7px; padding:8px 9px; width:100%; }
+    input[type=file] { display:none; } label { color:var(--muted); font-size:13px; } .field { min-width:140px; }
     button { border:0; border-radius:8px; padding:10px 15px; cursor:pointer; font-weight:650; }
     button.primary { background:var(--blue); color:#fff; } button.secondary { color:#194da8; background:#eaf1ff; } button.ghost { background:#f1f4f8; color:#39465a; }
     button:disabled { opacity:.5; cursor:not-allowed; }
+    button.tool { padding:7px 10px; font-size:12px; background:#eef2f7; color:#344054; }
+    button.tool.active { background:var(--blue); color:#fff; }
     #status { margin:17px 2px 0; color:var(--muted); min-height:22px; } #status.error { color:#b42318; }
-    #workspace { display:none; margin-top:22px; grid-template-columns:minmax(0,1fr) 330px; gap:20px; }
-    .toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
-    .toolbar strong { font-size:17px; } .toolbar small { color:var(--muted); }
-    .canvas-wrap { background:#e9eef6; border-radius:10px; padding:12px; overflow:auto; text-align:center; }
+    #workspace { display:none; margin-top:22px; grid-template-columns:minmax(0,1fr) 360px; gap:20px; }
+    .toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; flex-wrap:wrap; }
+    .tools { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+    .canvas-wrap { background:#e9eef6; border-radius:10px; padding:12px; overflow:auto; text-align:center; min-height:280px; }
     canvas { max-width:100%; height:auto; background:white; box-shadow:0 2px 7px #1e293b25; cursor:crosshair; touch-action:none; }
     .help { color:var(--muted); font-size:12px; margin:10px 2px 0; }
-    .review-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
-    #roomList { max-height:410px; overflow:auto; padding-right:3px; }
-    .room { border:1px solid var(--line); border-radius:9px; padding:10px; margin:8px 0; background:#fff; }
+    .notice { background:#fff7ed; color:#7a2e0e; border:1px solid #fdc7a0; border-radius:8px; padding:8px 10px; font-size:12px; margin-bottom:10px; }
+    #elList { max-height:280px; overflow:auto; padding-right:3px; }
+    .room { border:1px solid var(--line); border-radius:9px; padding:10px; margin:8px 0; background:#fff; cursor:pointer; }
     .room.selected { border-color:var(--blue); box-shadow:0 0 0 2px #2563eb20; }
     .room-title { display:flex; align-items:center; gap:7px; margin-bottom:8px; } .room-title input { flex:1; }
     .room-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; } .room-grid label { font-size:11px; }
-    .room-grid input { padding:5px 6px; font-size:13px; } .remove { color:#b42318; background:none; padding:3px; font-size:12px; }
-    .scale { border-top:1px solid var(--line); margin-top:16px; padding-top:15px; } .scale h3 { margin:0 0 7px; font-size:15px; }
-    .scale p { color:var(--muted); font-size:12px; margin:4px 0 10px; } .actions { display:flex; gap:8px; margin-top:17px; }
-    @media (max-width:850px) { #workspace { grid-template-columns:1fr; } #roomList { max-height:none; } }
+    .room-grid input, .room-grid select { padding:5px 6px; font-size:13px; } .remove { color:#b42318; background:none; padding:3px; font-size:12px; }
+    .scale { border-top:1px solid var(--line); margin-top:16px; padding-top:15px; } .scale h3, .signoff h3 { margin:0 0 7px; font-size:15px; }
+    .scale p, .signoff p { color:var(--muted); font-size:12px; margin:4px 0 10px; } .actions { display:flex; gap:8px; margin-top:17px; flex-wrap:wrap; }
+    .signoff { border-top:1px solid var(--line); margin-top:16px; padding-top:15px; }
+    .check { display:flex; gap:8px; align-items:flex-start; font-size:13px; color:var(--ink); margin:8px 0; }
+    .check input { width:auto; margin-top:3px; }
+    .badge { font-size:11px; color:#175cd3; background:#eff4ff; border-radius:999px; padding:2px 8px; }
+    @media (max-width:900px) { #workspace { grid-template-columns:1fr; } #elList { max-height:none; } }
   </style>
 </head>
 <body>
-  <header><h1>BOQ Studio</h1><p>Upload a floor plan, review the detected rooms, and download a priced Excel BOQ.</p></header>
+  <header>
+    <h1>BOQ Studio</h1>
+    <p>IS 1200 / CPWD takeoff from traced 2D drawings or IFC. Auto-detected boxes are drafts only.</p>
+  </header>
   <main>
     <section class="card">
       <div class="upload">
         <label class="drop" id="drop">
-          <input id="file" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff">
-          <strong id="fileLabel">Choose a PDF or image</strong><br><small>Automatic room detection starts immediately</small>
+          <input id="file" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.ifc,.ifczip">
+          <strong id="fileLabel">Choose a PDF, image, or IFC</strong><br>
+          <small>Earthwork needs excavation plans and depths — not just a furniture floor plan.</small>
         </label>
-        <div class="field"><label for="wallHeight">Wall height (m)</label><input id="wallHeight" type="number" min=".1" max="20" step=".1" value="3"></div>
-        <button class="primary" id="reviewBtn" disabled>Review drawing</button>
+        <div class="field"><label for="projectName">Project</label><input id="projectName" type="text" placeholder="Project name"></div>
+        <div class="field"><label for="defaultHeight">Default wall height (m)</label><input id="defaultHeight" type="number" min=".1" max="20" step=".1" value="3"></div>
+        <button class="primary" id="reviewBtn" disabled>Load for takeoff</button>
       </div>
       <div id="status" role="status"></div>
     </section>
 
     <section id="workspace">
       <div class="card">
-        <div class="toolbar"><div><strong>Visual review</strong><br><small id="pageInfo"></small></div><select id="pageSelect" aria-label="Drawing page"></select></div>
+        <div class="toolbar">
+          <div><strong id="viewTitle">Takeoff</strong><br><small id="pageInfo"></small></div>
+          <select id="pageSelect" aria-label="Drawing page"></select>
+        </div>
+        <div class="tools" id="tools"></div>
+        <div class="notice" id="modeNotice"></div>
         <div class="canvas-wrap"><canvas id="canvas"></canvas></div>
-        <p class="help">Drag a rectangle to move it. Edit exact values or names on the right. Drag on empty space to add a room.</p>
+        <p class="help" id="help"></p>
       </div>
       <aside class="card">
-        <div class="review-head"><strong>Detected rooms</strong><button class="secondary" id="addBtn">+ Add room</button></div>
-        <div id="roomList"></div>
-        <div class="scale"><h3>Scale calibration</h3><p id="scaleHint">Use the detected value, or enter the drawing scale in pixels per metre.</p>
-          <label for="scaleInput">Pixels per metre</label><input id="scaleInput" type="number" min="1" max="1000000" step=".01">
+        <div class="review-head" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <strong>Measured elements</strong>
+          <span class="badge" id="countBadge">0</span>
         </div>
-        <div class="actions"><button class="primary" id="generateBtn">Generate Excel</button><button class="ghost" id="resetBtn">Start over</button></div>
+        <div id="elList"></div>
+        <div class="scale" id="scaleBox">
+          <h3>Scale calibration</h3>
+          <p id="scaleHint">Use the Scale tool: click two points of a known length. Detected SCALE 1:N is not tender-grade by itself.</p>
+          <label for="scaleInput">Pixels per metre</label>
+          <input id="scaleInput" type="number" min="1" max="1000000" step=".01">
+          <p id="calibState"></p>
+        </div>
+        <div class="signoff">
+          <h3>QS sign-off</h3>
+          <p>Software assists takeoff. You remain the tender authority.</p>
+          <label for="qsName">QS name</label>
+          <input id="qsName" type="text" placeholder="Name on cover sheet">
+          <label class="check" id="ifcCheckWrap" style="display:none;">
+            <input id="ifcUnits" type="checkbox">
+            <span>IFC project units confirmed as metres (or already converted).</span>
+          </label>
+          <label class="check">
+            <input id="qsSign" type="checkbox">
+            <span>I have reviewed geometry, scale, item codes, and deficiencies. Generate a signed tender BOQ.</span>
+          </label>
+        </div>
+        <div class="actions">
+          <button class="primary" id="generateBtn">Generate tender Excel</button>
+          <button class="ghost" id="resetBtn">Start over</button>
+        </div>
       </aside>
     </section>
   </main>
- <script>
+<script>
 const API = window.BOQ_API || 'http://localhost:8000';
 const $ = id => document.getElementById(id);
-let file, preview, pageIndex = 0, selected = -1, drag = null;
+const TOOLS = [
+  ['select','Select'],['scale','Scale'],['space','Space'],['wall','Wall'],
+  ['opening','Opening'],['slab','Slab'],['beam','Beam'],['column','Column'],
+  ['footing','Footing'],['excavation','Excavation']
+];
+const COLORS = {space:'#12b76a',wall:'#2e90fa',opening:'#ef6820',slab:'#7a5af8',beam:'#6172f3',column:'#ee46bc',footing:'#b54708',excavation:'#865503'};
+const CODES = {space:5.1,wall:3.1,opening:7.1,slab:2.5,beam:2.4,column:2.3,footing:2.2,excavation:1.1};
+let file, preview, pageIndex = 0, selectedId = null, tool = 'select', draft = null, scalePts = [], imgCache = null;
 const canvas = $('canvas'), ctx = canvas.getContext('2d');
 
 function setStatus(text, error=false) { $('status').textContent=text; $('status').className=error?'error':''; }
-function rooms() { return preview.pages.flatMap(p => p.rooms); }
-function currentRooms() { return preview.pages[pageIndex].rooms; }
-function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
-function normalizeRoom(room, page) {
-  room.width = clamp(Number(room.width) || 1, 1, page.width);
-  room.height = clamp(Number(room.height) || 1, 1, page.height);
-  room.x = clamp(Number(room.x) || 0, 0, page.width - room.width);
-  room.y = clamp(Number(room.y) || 0, 0, page.height - room.height);
-}
+function isIfc() { return preview && preview.kind === 'ifc'; }
+function page() { return preview.pages[pageIndex]; }
+function elements() { return page().elements || (page().elements = []); }
+function allElements() { return preview.pages.flatMap(p => p.elements || []); }
+function findEl(id) { return allElements().find(e => e.id === id); }
+function uid(prefix) { return prefix + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function clamp(v,a,b){ return Math.max(a, Math.min(b,v)); }
 function pointerPosition(event) {
   const rect=canvas.getBoundingClientRect();
   return {x:(event.clientX-rect.left)*canvas.width/rect.width, y:(event.clientY-rect.top)*canvas.height/rect.height};
 }
-function handleAt(room, x, y) {
-  const rect=canvas.getBoundingClientRect(), tolerance=Math.max(8, 12*canvas.width/rect.width);
-  const nearLeft=Math.abs(x-room.x)<=tolerance, nearRight=Math.abs(x-(room.x+room.width))<=tolerance;
-  const nearTop=Math.abs(y-room.y)<=tolerance, nearBottom=Math.abs(y-(room.y+room.height))<=tolerance;
-  const withinX=x>=room.x-tolerance&&x<=room.x+room.width+tolerance;
-  const withinY=y>=room.y-tolerance&&y<=room.y+room.height+tolerance;
-  let handle='';
-  if (nearTop&&withinX) handle+='n';
-  if (nearBottom&&withinX) handle+='s';
-  if (nearLeft&&withinY) handle+='w';
-  if (nearRight&&withinY) handle+='e';
-  return handle || null;
+function dist(a,b){ return Math.hypot(b[0]-a[0], b[1]-a[1]); }
+function polylineLen(pts){ let n=0; for(let i=1;i<pts.length;i++) n+=dist(pts[i-1],pts[i]); return n; }
+function polyArea(pts){
+  if(!pts||pts.length<3) return 0;
+  let a=0; const p=pts.concat([pts[0]]);
+  for(let i=0;i<p.length-1;i++) a+=p[i][0]*p[i+1][1]-p[i+1][0]*p[i][1];
+  return Math.abs(a)/2;
 }
-function draw() {
-  if (!preview) return;
-  const p=preview.pages[pageIndex], image=new Image();
-  image.onload=()=> {
- if (!preview || p !== preview.pages[pageIndex]) return;
- canvas.width=p.width; canvas.height=p.height; ctx.drawImage(image,0,0);
- const lineWidth=Math.max(3,p.width/500);
- p.rooms.forEach((r,i) => {
-   normalizeRoom(r,p);
-   ctx.fillStyle=i===selected?'#2563eb30':'#20a36a22';
-   ctx.strokeStyle=i===selected?'#2563eb':'#20a36a';
-   ctx.lineWidth=lineWidth; ctx.fillRect(r.x,r.y,r.width,r.height); ctx.strokeRect(r.x,r.y,r.width,r.height);
-   ctx.fillStyle='#122'; ctx.font='bold 16px system-ui'; ctx.fillText(r.name,r.x+6,r.y+20);
-   if (i===selected) {
-     ctx.fillStyle='#2563eb';
-     const size=Math.max(8,lineWidth*2);
-     [[r.x,r.y],[r.x+r.width/2,r.y],[r.x+r.width,r.y],[r.x,r.y+r.height/2],
-      [r.x+r.width,r.y+r.height/2],[r.x,r.y+r.height],[r.x+r.width/2,r.y+r.height],[r.x+r.width,r.y+r.height]]
-       .forEach(([x,y])=>ctx.fillRect(x-size/2,y-size/2,size,size));
-   }
- });
-  };
+function defaultProps(type){
+  const h = Number($('defaultHeight').value) || 3;
+  const base = { id: uid(type[0]), type, name: type[0].toUpperCase()+type.slice(1)+' '+ (elements().filter(e=>e.type===type).length+1),
+    source: isIfc()?'ifc':'2d', page: pageIndex, points: [], item_code: CODES[type], shared:false };
+  if(type==='wall') Object.assign(base,{thickness_m:0.23,height_m:h});
+  if(type==='space') Object.assign(base,{height_m:h});
+  if(type==='opening') Object.assign(base,{opening_kind:'door',width_m:1.0,height_m:2.1,item_code:7.1});
+  if(type==='slab'||type==='footing') Object.assign(base,{depth_m:null});
+  if(type==='beam') Object.assign(base,{width_m:null,depth_m:null});
+  if(type==='column') Object.assign(base,{width_m:null,thickness_m:null,height_m:h});
+  if(type==='excavation') Object.assign(base,{depth_m:null,top_rl:null,bottom_rl:null});
+  return base;
+}
+
+function nearestWall(x,y){
+  let best=null, bestD=1e9;
+  elements().filter(e=>e.type==='wall'&&(e.points||[]).length>=2).forEach(w=>{
+    for(let i=1;i<w.points.length;i++){
+      const a=w.points[i-1], b=w.points[i];
+      const l2=dist(a,b)**2 || 1;
+      let t=((x-a[0])*(b[0]-a[0])+(y-a[1])*(b[1]-a[1]))/l2; t=clamp(t,0,1);
+      const px=a[0]+t*(b[0]-a[0]), py=a[1]+t*(b[1]-a[1]);
+      const d=Math.hypot(x-px,y-py);
+      if(d<bestD){bestD=d;best=w;}
+    }
+  });
+  const tol = Math.max(18, canvas.width/80);
+  return bestD<=tol ? best : null;
+}
+
+function hitElement(x,y){
+  const list=elements();
+  for(let i=list.length-1;i>=0;i--){
+    const el=list[i], pts=el.points||[];
+    if(el.type==='wall'||el.type==='beam'){
+      if(pts.length>=2){
+        for(let k=1;k<pts.length;k++){
+          const a=pts[k-1],b=pts[k];
+          const l2=dist(a,b)**2||1;
+          let t=((x-a[0])*(b[0]-a[0])+(y-a[1])*(b[1]-a[1]))/l2; t=clamp(t,0,1);
+          const d=Math.hypot(x-(a[0]+t*(b[0]-a[0])), y-(a[1]+t*(b[1]-a[1])));
+          if(d<14) return el;
+        }
+      }
+    } else if(el.type==='opening' && pts.length){
+      if(Math.hypot(x-pts[0][0], y-pts[0][1])<16) return el;
+    } else if(pts.length>=3){
+      const xs=pts.map(p=>p[0]), ys=pts.map(p=>p[1]);
+      if(x>=Math.min(...xs)&&x<=Math.max(...xs)&&y>=Math.min(...ys)&&y<=Math.max(...ys)) return el;
+    }
+  }
+  return null;
+}
+
+function drawPoly(pts, fill, stroke, close){
+  if(!pts||!pts.length) return;
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+  pts.slice(1).forEach(p=>ctx.lineTo(p[0],p[1]));
+  if(close) ctx.closePath();
+  if(fill){ ctx.fillStyle=fill; ctx.fill(); }
+  ctx.strokeStyle=stroke; ctx.stroke();
+}
+
+function paintScene(image){
+  const p=page();
+  canvas.width=p.width; canvas.height=p.height;
+  if(image) ctx.drawImage(image,0,0,p.width,p.height);
+  else { ctx.fillStyle='#f8fafc'; ctx.fillRect(0,0,p.width,p.height); ctx.fillStyle='#667085'; ctx.font='16px system-ui';
+    ctx.fillText('IFC takeoff — no drawing view. Review elements and properties on the right.', 24, 40); }
+  const lw=Math.max(2, p.width/500); ctx.lineWidth=lw;
+  elements().forEach(el=>{
+    const selected=el.id===selectedId;
+    const c=COLORS[el.type]||'#344054';
+    const pts=el.points||[];
+    if(el.type==='wall'||el.type==='beam') drawPoly(pts,null, selected?'#2563eb':c, false);
+    else if(el.type==='opening'){
+      if(pts.length){ ctx.fillStyle=c; ctx.beginPath(); ctx.arc(pts[0][0],pts[0][1],8,0,Math.PI*2); ctx.fill(); }
+    } else drawPoly(pts, selected?c+'55':c+'22', selected?'#2563eb':c, true);
+    if(pts.length){
+      ctx.fillStyle='#122'; ctx.font='bold 13px system-ui';
+      ctx.fillText(el.name||el.type, pts[0][0]+6, pts[0][1]+16);
+    }
+  });
+  if(draft && draft.points.length){
+    drawPoly(draft.points, '#2563eb22', '#2563eb', tool!=='wall' && tool!=='beam' && tool!=='scale');
+    draft.points.forEach(pt=>{ ctx.fillStyle='#2563eb'; ctx.fillRect(pt[0]-4,pt[1]-4,8,8); });
+  }
+  if(scalePts.length){
+    scalePts.forEach(pt=>{ ctx.fillStyle='#f79009'; ctx.fillRect(pt[0]-4,pt[1]-4,8,8); });
+    if(scalePts.length===2) drawPoly(scalePts,null,'#f79009',false);
+  }
+}
+
+function draw(){
+  if(!preview) return;
+  const p=page();
+  if(!p.image){ paintScene(null); return; }
+  if(imgCache && imgCache.src===p.image){ paintScene(imgCache); return; }
+  const image=new Image();
+  image.onload=()=>{ imgCache=image; if(!preview || p!==page()) return; paintScene(image); };
   image.src=p.image;
 }
-function syncSelectedInputs() {
-  const item=$('roomList').children[selected];
-  const room=currentRooms()[selected];
-  if (!item || !room) return;
-  item.querySelectorAll('input[data-k]').forEach(input => { input.value=room[input.dataset.k]; });
-}
-function renderRooms() {
-  const list=$('roomList'); list.replaceChildren();
-  currentRooms().forEach((room,index)=>{
- const el=document.createElement('div'); el.className='room '+(index===selected?'selected':'');
- const title=document.createElement('div'); title.className='room-title';
- const name=document.createElement('input'); name.type='text'; name.value=room.name; name.dataset.k='name'; name.setAttribute('aria-label','Room name');
- const remove=document.createElement('button'); remove.className='remove'; remove.type='button'; remove.title='Remove room'; remove.textContent='Remove';
- title.append(name,remove);
- const grid=document.createElement('div'); grid.className='room-grid';
- ['x','y','width','height'].forEach(key=>{
-   const label=document.createElement('label'); label.textContent=key;
-   const input=document.createElement('input'); input.dataset.k=key; input.type='number'; input.step='.1'; input.value=room[key];
-   input.min=key==='width'||key==='height'?'1':'0'; label.appendChild(input); grid.appendChild(label);
-   input.oninput=()=> {
-     const value=Number(input.value);
-     if (!Number.isFinite(value)) return;
-     room[key]=key==='width'||key==='height'?Math.max(1,value):Math.max(0,value);
-     selected=index; draw();
-   };
-   input.onchange=()=>{ normalizeRoom(room,preview.pages[pageIndex]); renderRooms(); draw(); };
- });
- name.oninput=()=>{ room.name=name.value; selected=index; draw(); };
- remove.onclick=()=>{ currentRooms().splice(index,1); selected=-1; renderRooms(); draw(); };
- el.onclick=event=>{ if(event.target!==name&&event.target!==remove&&event.target.tagName!=='INPUT'){selected=index;renderRooms();draw();} };
- el.append(title,grid); list.appendChild(el);
+
+function renderTools(){
+  const bar=$('tools'); bar.replaceChildren();
+  TOOLS.forEach(([id,label])=>{
+    const b=document.createElement('button'); b.type='button'; b.className='tool'+(tool===id?' active':''); b.textContent=label;
+    b.onclick=()=>{ tool=id; draft=null; scalePts=[]; renderTools(); setHelp(); };
+    bar.appendChild(b);
   });
-  $('pageInfo').textContent=`Page ${pageIndex+1} of ${preview.pages.length} · ${rooms().length} rooms`;
 }
-function addRoom(x, y) {
-  const p=preview.pages[pageIndex], width=Math.min(160,p.width), height=Math.min(120,p.height);
-  const room={id:`p${pageIndex}-r${Date.now()}`,page:pageIndex,name:`Room ${p.rooms.length+1}`,x:x-width/2,y:y-height/2,width,height};
-  normalizeRoom(room,p); p.rooms.push(room); selected=p.rooms.length-1; renderRooms(); draw();
+
+function setHelp(){
+  const map={
+    select:'Click an element to edit properties. Auto-detected rooms are draft spaces — delete or keep them.',
+    scale:'Click two points of a known real-world length, then enter metres. Required on every page for tender Excel.',
+    space:'Click polygon corners for a room. Double-click or Enter to close. Flooring uses polygon area, not a bounding box.',
+    wall:'Click wall start and end (centerline). Set thickness and height. Mark shared for party walls (brickwork once).',
+    opening:'Click near a wall to attach a door/window. Openings > 0.1 m² are deducted from masonry and plaster (IS 1200).',
+    slab:'Trace slab plan, then enter depth (m). Volume is area × depth — no default thickness.',
+    beam:'Click beam centerline, then enter width and depth.',
+    column:'Trace column section (or a small rectangle), then confirm height and section sizes.',
+    footing:'Trace footing plan and enter depth. Required before earthwork backfill can subtract structure.',
+    excavation:'Trace excavation plan and enter depth or top/bottom RL. Do not use storey height as depth.'
+  };
+  $('help').textContent = isIfc() ? 'IFC elements are listed in metres. Confirm units, map CPWD codes, then sign off.' : map[tool];
+  $('modeNotice').textContent = isIfc()
+    ? (preview.skipped||[]).length ? `${preview.skipped.length} unmapped IFC types were skipped (see API skipped list).` : 'IFC quantities use Qto values when present; otherwise bounding geometry. Confirm units before sign-off.'
+    : '2D quantities are only as good as traced geometry and two-point scale. Shared walls must be marked or overlapped centerlines are merged.';
 }
+
+function renderList(){
+  const list=$('elList'); list.replaceChildren();
+  elements().forEach(el=>{
+    const wrap=document.createElement('div'); wrap.className='room'+(el.id===selectedId?' selected':'');
+    wrap.onclick=ev=>{ if(ev.target.closest('button')) return; selectedId=el.id; renderList(); draw(); };
+    const title=document.createElement('div'); title.className='room-title';
+    const name=document.createElement('input'); name.type='text'; name.value=el.name||''; name.oninput=()=>{el.name=name.value; draw();};
+    const remove=document.createElement('button'); remove.className='remove'; remove.type='button'; remove.textContent='Remove';
+    remove.onclick=()=>{ page().elements=elements().filter(e=>e.id!==el.id); if(selectedId===el.id) selectedId=null; renderList(); draw(); };
+    title.append(name, remove);
+    const grid=document.createElement('div'); grid.className='room-grid';
+    const addField=(label,key,step,opts)=>{
+      const lab=document.createElement('label'); lab.textContent=label;
+      if(opts){
+        const sel=document.createElement('select');
+        opts.forEach(([v,t])=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; sel.appendChild(o); });
+        sel.value=String(el[key]??opts[0][0]); sel.onchange=()=>{
+          if(key==='shared') el.shared = sel.value==='true';
+          else if(key==='opening_kind'){ el.opening_kind=sel.value; el.item_code = sel.value==='window'?7.2:7.1; }
+          else if(key==='type') el.type=sel.value;
+          else el[key]=isNaN(Number(sel.value))?sel.value:Number(sel.value);
+        };
+        lab.appendChild(sel);
+      } else {
+        const input=document.createElement('input'); input.type='number'; input.step=step||'.01';
+        input.value=el[key]??''; input.oninput=()=>{ const n=Number(input.value); el[key]=input.value===''?null:(Number.isFinite(n)?n:null); };
+        lab.appendChild(input);
+      }
+      grid.appendChild(lab);
+    };
+    addField('Type','type',null, TOOLS.filter(t=>t[0]!=='select'&&t[0]!=='scale').map(([id,l])=>[id,l]));
+    addField('CPWD code','item_code','.1');
+    if(el.type==='wall'){ addField('Thickness m','thickness_m'); addField('Height m','height_m'); addField('Shared','shared',null,[['false','No'],['true','Yes']]); }
+    if(el.type==='opening'){ addField('Kind','opening_kind',null,[['door','Door'],['window','Window']]); addField('Width m','width_m'); addField('Height m','height_m'); }
+    if(el.type==='space') addField('Storey ht m','height_m');
+    if(el.type==='slab'||el.type==='footing') addField('Depth m','depth_m');
+    if(el.type==='beam'){ addField('Width m','width_m'); addField('Depth m','depth_m'); }
+    if(el.type==='column'){ addField('Width m','width_m'); addField('Thick m','thickness_m'); addField('Height m','height_m'); }
+    if(el.type==='excavation'){ addField('Depth m','depth_m'); addField('Top RL','top_rl'); addField('Bottom RL','bottom_rl'); }
+    if(el.ifc_type){ const n=document.createElement('div'); n.style.cssText='grid-column:1/-1;font-size:11px;color:#667085'; n.textContent=el.ifc_type+(el.ifc_guid?' · '+el.ifc_guid.slice(0,8):''); grid.appendChild(n); }
+    wrap.append(title, grid); list.appendChild(wrap);
+  });
+  $('countBadge').textContent=String(allElements().length);
+  $('pageInfo').textContent = isIfc()
+    ? `${allElements().length} IFC elements · schema ${preview.schema||''}`
+    : `Page ${pageIndex+1} of ${preview.pages.length} · ${allElements().length} elements`;
+  updateCalib();
+}
+
+function updateCalib(){
+  if(isIfc()){ $('scaleBox').style.display='none'; $('ifcCheckWrap').style.display='flex'; return; }
+  $('scaleBox').style.display='block'; $('ifcCheckWrap').style.display='none';
+  const p=page(); $('scaleInput').value=p.px_per_unit;
+  $('calibState').textContent = p.scale_calibrated ? 'This page is calibrated for tender export.' : 'This page is not calibrated yet.';
+  $('calibState').style.color = p.scale_calibrated ? '#067647' : '#b54708';
+}
+
+function finishDraft(){
+  if(!draft) return;
+  const poly=['space','slab','footing','excavation','column'].includes(draft.type);
+  if(poly && draft.points.length<3){ setStatus('Need at least 3 points for a polygon.', true); return; }
+  if((draft.type==='wall'||draft.type==='beam') && draft.points.length<2){ setStatus('Need two points for a centerline.', true); return; }
+  elements().push(draft); selectedId=draft.id; draft=null; renderList(); draw(); setStatus('Element added. Set sizes/codes on the right.');
+}
+
+function finishScale(){
+  if(scalePts.length<2) return;
+  const px=dist(scalePts[0], scalePts[1]);
+  const metres=Number(prompt('Known real-world distance between the two points (metres)?'));
+  scalePts=[];
+  if(!Number.isFinite(metres)||metres<=0){ setStatus('Scale cancelled — enter a positive length in metres.', true); draw(); return; }
+  page().px_per_unit = px/metres;
+  page().scale_calibrated = true;
+  preview.scale_method = 'two_point';
+  $('scaleInput').value=page().px_per_unit;
+  updateCalib(); draw(); setStatus(`Page ${pageIndex+1} calibrated at ${page().px_per_unit.toFixed(3)} px/m.`);
+}
+
 async function responseError(response) {
   const text=await response.text();
   try { const data=JSON.parse(text); return data.detail||`Server error ${response.status}`; }
   catch (_) { return text||`Server error ${response.status}`; }
 }
+
 $('file').onchange=async e=>{ if(!e.target.files.length)return; file=e.target.files[0]; $('fileLabel').textContent=file.name; $('drop').classList.add('ready'); $('reviewBtn').disabled=false; await loadPreview(); };
 $('reviewBtn').onclick=loadPreview;
+
 async function loadPreview() {
-  if(!file)return; $('reviewBtn').disabled=true; setStatus('Detecting rooms and preparing the review…');
+  if(!file)return; $('reviewBtn').disabled=true; setStatus('Reading file…');
   const form=new FormData(); form.append('file',file);
   try {
- const response=await fetch(`${API}/preview`,{method:'POST',body:form});
- if(!response.ok) throw Error(await responseError(response));
- const data=await response.json();
- if(!Array.isArray(data.pages)||!data.pages.length) throw Error('The server returned no readable pages.');
- preview=data; pageIndex=0; selected=-1;
- const select=$('pageSelect'); select.replaceChildren();
- data.pages.forEach((_,i)=>{ const option=document.createElement('option'); option.value=i; option.textContent=`Page ${i+1}`; select.appendChild(option); });
- preview.pages.forEach((page,i)=>{ page.px_per_unit=Number((data.page_scales||[])[i]||page.px_per_unit); });
- $('scaleInput').value=preview.pages[0].px_per_unit;
- $('scaleHint').textContent=preview.pages[0].scale_detected?'Scale detected from drawing; adjust if needed.':'No scale label found; verify the suggested value.';
- $('workspace').style.display='grid'; renderRooms(); draw();
- setStatus(`Ready — ${data.room_count} room${data.room_count===1?'':'s'} detected. Review before generating.`);
-  } catch(e) { setStatus(e.message||'Could not load the drawing.',true); } finally { $('reviewBtn').disabled=false; }
+    const response=await fetch(`${API}/preview`,{method:'POST',body:form});
+    if(!response.ok) throw Error(await responseError(response));
+    const data=await response.json();
+    if(!Array.isArray(data.pages)||!data.pages.length) throw Error('The server returned no readable pages.');
+    preview=data; pageIndex=0; selectedId=null; draft=null; scalePts=[]; imgCache=null; tool='select';
+    preview.pages.forEach((p,i)=>{
+      p.elements = p.elements || [];
+      p.scale_calibrated = !!p.scale_calibrated;
+      p.px_per_unit=Number((data.page_scales||[])[i]||p.px_per_unit||1);
+    });
+    const select=$('pageSelect'); select.replaceChildren();
+    data.pages.forEach((_,i)=>{ const option=document.createElement('option'); option.value=i; option.textContent=`Page ${i+1}`; select.appendChild(option); });
+    select.style.display = data.pages.length>1 ? '' : 'none';
+    $('workspace').style.display='grid';
+    $('viewTitle').textContent = isIfc() ? 'IFC review' : '2D takeoff';
+    renderTools(); setHelp(); renderList(); draw();
+    setStatus(isIfc()
+      ? `Loaded ${data.element_count||allElements().length} IFC elements. Confirm units and codes, then sign off.`
+      : `Draft spaces from detection: ${data.room_count||0}. Calibrate scale and trace walls/openings before tender export.`);
+  } catch(e) { setStatus(e.message||'Could not load the file.',true); }
+  finally { $('reviewBtn').disabled=false; }
 }
-$('pageSelect').onchange=e=>{ pageIndex=Number(e.target.value); selected=-1; $('scaleInput').value=preview.pages[pageIndex].px_per_unit; $('scaleHint').textContent=preview.pages[pageIndex].scale_detected?'Scale detected from drawing; adjust if needed.':'No scale label found; verify the suggested value.'; renderRooms(); draw(); };
-$('scaleInput').oninput=e=>{ const value=Number(e.target.value); if(Number.isFinite(value)&&value>0)preview.pages[pageIndex].px_per_unit=value; };
-$('addBtn').onclick=()=>addRoom(preview.pages[pageIndex].width/2,preview.pages[pageIndex].height/2);
+
+$('pageSelect').onchange=e=>{ pageIndex=Number(e.target.value); selectedId=null; draft=null; scalePts=[]; imgCache=null; renderList(); draw(); };
+$('scaleInput').oninput=e=>{ const value=Number(e.target.value); if(Number.isFinite(value)&&value>0){ page().px_per_unit=value; } };
+
+window.addEventListener('keydown', e=>{
+  if(e.key==='Enter' && draft){ e.preventDefault(); finishDraft(); }
+  if(e.key==='Escape'){ draft=null; scalePts=[]; draw(); }
+});
+
+canvas.ondblclick=e=>{
+  if(draft && ['space','slab','footing','excavation','column'].includes(tool)){ e.preventDefault(); finishDraft(); }
+};
+
 canvas.onpointerdown=e=>{
-  if(!preview)return;
+  if(!preview || isIfc()) return;
   const {x,y}=pointerPosition(e);
-  const hit=currentRooms().map((room,index)=>({room,index})).reverse().find(v=>x>=v.room.x&&x<=v.room.x+v.room.width&&y>=v.room.y&&y<=v.room.y+v.room.height);
-  if(hit){
- selected=hit.index; const mode=handleAt(hit.room,x,y)||'move';
- drag={mode,startX:x,startY:y,start:{...hit.room}}; renderRooms(); draw(); canvas.setPointerCapture(e.pointerId);
-  } else addRoom(x,y);
-};
-canvas.onpointermove=e=>{
-  if(!drag)return;
-  const p=preview.pages[pageIndex], room=currentRooms()[selected]; if(!room){drag=null;return;}
-  const {x,y}=pointerPosition(e), dx=x-drag.startX, dy=y-drag.startY, start=drag.start;
-  if(drag.mode==='move'){ room.x=clamp(start.x+dx,0,p.width-start.width); room.y=clamp(start.y+dy,0,p.height-start.height); }
-  else {
- if(drag.mode.includes('e')) room.width=clamp(start.width+dx,1,p.width-start.x);
- if(drag.mode.includes('s')) room.height=clamp(start.height+dy,1,p.height-start.y);
- if(drag.mode.includes('w')) { const right=start.x+start.width; room.x=clamp(start.x+dx,0,right-1); room.width=right-room.x; }
- if(drag.mode.includes('n')) { const bottom=start.y+start.height; room.y=clamp(start.y+dy,0,bottom-1); room.height=bottom-room.y; }
+  if(tool==='select'){
+    const hit=hitElement(x,y); selectedId=hit?hit.id:null; renderList(); draw(); return;
   }
-  syncSelectedInputs(); draw();
+  if(tool==='scale'){
+    scalePts.push([x,y]); draw();
+    if(scalePts.length>=2) finishScale();
+    return;
+  }
+  if(tool==='opening'){
+    const wall=nearestWall(x,y);
+    if(!wall){ setStatus('Click near a traced wall to place an opening.', true); return; }
+    const el=defaultProps('opening'); el.host_id=wall.id; el.points=[[x,y]];
+    elements().push(el); selectedId=el.id; renderList(); draw(); setStatus('Opening attached to '+wall.name); return;
+  }
+  if(!draft) draft=defaultProps(tool);
+  draft.points.push([x,y]);
+  if((tool==='wall'||tool==='beam') && draft.points.length>=2) finishDraft();
+  else draw();
 };
-function endDrag(e){ if(drag&&e&&canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId); drag=null; }
-canvas.onpointerup=endDrag; canvas.onpointercancel=endDrag; canvas.onpointerleave=()=>{ if(drag) draw(); };
+
+function takeoffPayload(){
+  const units = isIfc() ? 'm' : 'px';
+  return {
+    project_name: $('projectName').value.trim(),
+    source_filename: file && file.name,
+    qs_name: $('qsName').value.trim(),
+    qs_signed: $('qsSign').checked,
+    units,
+    scale_method: isIfc() ? 'ifc_units' : (preview.scale_method || 'detected'),
+    ifc_units_confirmed: isIfc() && $('ifcUnits').checked,
+    page_scales: preview.pages.map(p => p.px_per_unit),
+    scale_calibrated: preview.pages.map(p => !!p.scale_calibrated),
+    elements: allElements().map(el => ({
+      id: el.id, type: el.type, name: el.name, source: el.source || (isIfc()?'ifc':'2d'), page: el.page||0,
+      points: el.points || [], thickness_m: el.thickness_m, height_m: el.height_m, length_m: el.length_m,
+      width_m: el.width_m, depth_m: el.depth_m, top_rl: el.top_rl, bottom_rl: el.bottom_rl,
+      host_id: el.host_id, host_space_ids: el.host_space_ids || [], shared: el.shared===true || el.shared==='true',
+      opening_kind: el.opening_kind, item_code: el.item_code, ifc_type: el.ifc_type, ifc_guid: el.ifc_guid, qto: el.qto || {}
+    }))
+  };
+}
+
 $('generateBtn').onclick=async()=>{
   if(!file||!preview)return;
-  const wallHeight=Number($('wallHeight').value);
-  if(!Number.isFinite(wallHeight)||wallHeight<.1||wallHeight>20){setStatus('Enter a wall height between 0.1 and 20 metres.',true);return;}
-  if(rooms().some(room=>{const p=preview.pages[room.page]; normalizeRoom(room,p); return room.width<1||room.height<1;})){setStatus('Review room dimensions before generating.',true);return;}
-  $('generateBtn').disabled=true; setStatus('Generating your Excel BOQ…');
-  const form=new FormData(); form.append('file',file); form.append('wall_height_m',String(wallHeight));
-  form.append('px_per_unit',String(preview.pages[0].px_per_unit)); form.append('page_scales',JSON.stringify(preview.pages.map(page=>page.px_per_unit)));
-  form.append('reviewed_rooms',JSON.stringify(rooms()));
+  if(!allElements().length){ setStatus('Add at least one measured element.', true); return; }
+  if(isIfc() && !$('ifcUnits').checked){ setStatus('Confirm IFC units before generating a tender BOQ.', true); return; }
+  if(!isIfc() && preview.pages.some(p=>!p.scale_calibrated)){ setStatus('Calibrate every page with the Scale tool (two known points).', true); return; }
+  if(!$('qsName').value.trim() || !$('qsSign').checked){ setStatus('Enter QS name and tick sign-off to generate a tender workbook.', true); return; }
+  $('generateBtn').disabled=true; setStatus('Building tender Excel (cover, taking-off, abstract, priced BOQ)…');
+  const form=new FormData(); form.append('file',file); form.append('takeoff', JSON.stringify(takeoffPayload()));
+  form.append('wall_height_m', String(Number($('defaultHeight').value)||3));
   try {
- const response=await fetch(`${API}/generate`,{method:'POST',body:form});
- if(!response.ok) throw Error(await responseError(response));
- const blob=await response.blob(), url=URL.createObjectURL(blob), anchor=document.createElement('a');
- anchor.href=url; anchor.download='generated_boq.xlsx'; document.body.appendChild(anchor); anchor.click(); anchor.remove();
- setTimeout(()=>URL.revokeObjectURL(url),1000); setStatus('Done — your BOQ Excel file is downloading.');
+    const response=await fetch(`${API}/generate`,{method:'POST',body:form});
+    if(!response.ok) throw Error(await responseError(response));
+    const blob=await response.blob(), url=URL.createObjectURL(blob), anchor=document.createElement('a');
+    anchor.href=url; anchor.download='tender_boq.xlsx'; document.body.appendChild(anchor); anchor.click(); anchor.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000); setStatus('Done — tender_boq.xlsx is downloading. Review the Deficiencies sheet before using quantities.');
   } catch(e) { setStatus(e.message||'Could not generate the BOQ.',true); }
   finally {$('generateBtn').disabled=false;}
 };
-$('resetBtn').onclick=()=>{preview=null;file=null;drag=null;$('file').value='';$('fileLabel').textContent='Choose a PDF or image';$('drop').classList.remove('ready');$('workspace').style.display='none';$('reviewBtn').disabled=true;setStatus('');};
- </script>
+$('resetBtn').onclick=()=>{preview=null;file=null;draft=null;scalePts=null;imgCache=null;$('file').value='';$('fileLabel').textContent='Choose a PDF, image, or IFC';$('drop').classList.remove('ready');$('workspace').style.display='none';$('reviewBtn').disabled=true;$('qsSign').checked=false;$('ifcUnits').checked=false;setStatus('');};
+renderTools();
+</script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-"""FastAPI application for the upload, review and BOQ generation workflow."""
+"""FastAPI application for QS-assisted takeoff, IFC import and tender BOQ export."""
 
 import base64
 import json
@@ -32,6 +32,9 @@ from app.extraction import (
     pdf_to_images,
     pixels_to_units,
 )
+from app.ifc_import import import_ifc
+from app.measurement import parse_takeoff, record_qa_review, validate_qa_requirements
+from app.tender_export import write_tender_workbook
 
 app = FastAPI(title="BOQ Automation API")
 
@@ -40,8 +43,6 @@ def _cors_origins() -> list[str]:
     configured = os.getenv("BOQ_CORS_ORIGINS", "")
     if configured.strip():
         return [origin.strip() for origin in configured.split(",") if origin.strip()]
-    # `null` is the Origin sent when the documented standalone HTML file is
-    # opened directly from disk. Keep the default limited to local development.
     return [
         "null",
         "http://localhost:3000",
@@ -70,7 +71,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
-ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
+ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".ifc", ".ifczip"}
 RENDER_DPI = 200
 MAX_IMAGE_PIXELS = 60_000_000
 
@@ -79,11 +80,14 @@ def _safe_extension(filename: str) -> str:
     return Path(filename or "").suffix.lower()
 
 
+def _is_ifc(path: Path) -> bool:
+    return path.suffix.lower() in {".ifc", ".ifczip"}
+
+
 async def _save_upload(upload: UploadFile) -> Path:
-    """Save an upload under the project output directory and enforce a size limit."""
     suffix = _safe_extension(upload.filename or "")
     if suffix not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=415, detail="Upload a PDF or a supported image file.")
+        raise HTTPException(status_code=415, detail="Upload a PDF, image, or IFC file.")
 
     path = UPLOAD_DIR / f"{uuid.uuid4().hex}{suffix}"
     size = 0
@@ -95,7 +99,7 @@ async def _save_upload(upload: UploadFile) -> Path:
                     break
                 size += len(chunk)
                 if size > MAX_UPLOAD_BYTES:
-                    raise HTTPException(status_code=413, detail="The drawing must be 25 MB or smaller.")
+                    raise HTTPException(status_code=413, detail="The file must be 25 MB or smaller.")
                 target.write(chunk)
     except HTTPException:
         path.unlink(missing_ok=True)
@@ -113,15 +117,34 @@ async def _save_upload(upload: UploadFile) -> Path:
 
 
 def _encode_preview_image(image: np.ndarray) -> str:
-    """Encode a page as a compact data URL so the standalone UI needs no extra endpoint."""
     success, encoded = cv2.imencode(".jpg", cv2.cvtColor(image, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 82])
     if not success:
         raise HTTPException(status_code=422, detail="Could not create a preview image.")
     return "data:image/jpeg;base64," + base64.b64encode(encoded.tobytes()).decode("ascii")
 
 
+def _draft_space_from_box(page_index: int, room_index: int, box, px_per_unit: float) -> dict[str, Any]:
+    x, y, width, height = box
+    return {
+        "id": f"p{page_index}-r{room_index + 1}",
+        "type": "space",
+        "name": f"Room {room_index + 1}",
+        "source": "2d",
+        "page": page_index,
+        "points": [
+            [int(x), int(y)],
+            [int(x + width), int(y)],
+            [int(x + width), int(y + height)],
+            [int(x), int(y + height)],
+        ],
+        "item_code": 5.1,
+        "width_m": round(width / px_per_unit, 2),
+        "height_m": None,
+        "draft": True,
+    }
+
+
 def _page_data(path: Path) -> list[dict[str, Any]]:
-    """Extract renderings, text, scales and editable pixel rectangles from a drawing."""
     suffix = path.suffix.lower()
     if suffix == ".pdf":
         try:
@@ -145,8 +168,6 @@ def _page_data(path: Path) -> list[dict[str, Any]]:
     pages: list[dict[str, Any]] = []
     for page_index, image in enumerate(images):
         vector_text = texts[page_index] if page_index < len(texts) else ""
-        # OCR is intentionally best effort: vector PDFs and installations without
-        # Tesseract should still produce a useful visual review.
         text = vector_text
         if not text.strip():
             try:
@@ -156,7 +177,9 @@ def _page_data(path: Path) -> list[dict[str, Any]]:
         px_per_unit = estimate_scale_from_text(text, render_dpi=RENDER_DPI)
         boxes = detect_rooms_walls(image)
         rooms = []
-        for room_index, (x, y, width, height) in enumerate(sorted(boxes, key=lambda b: (b[1], b[0]))):
+        elements = []
+        for room_index, box in enumerate(sorted(boxes, key=lambda b: (b[1], b[0]))):
+            x, y, width, height = box
             rooms.append(
                 {
                     "id": f"p{page_index}-r{room_index + 1}",
@@ -170,6 +193,7 @@ def _page_data(path: Path) -> list[dict[str, Any]]:
                     "height_m": round(height / px_per_unit, 2),
                 }
             )
+            elements.append(_draft_space_from_box(page_index, room_index, box, px_per_unit))
         pages.append(
             {
                 "page": page_index,
@@ -177,7 +201,9 @@ def _page_data(path: Path) -> list[dict[str, Any]]:
                 "height": int(image.shape[0]),
                 "image": _encode_preview_image(image),
                 "rooms": rooms,
+                "elements": elements,
                 "px_per_unit": round(px_per_unit, 4),
+                "scale_calibrated": False,
                 "scale_detected": bool(
                     re.search(r"\bSCALE\s*1\s*[:/]\s*\d+(?:\.\d+)?\b", text, re.IGNORECASE)
                 ),
@@ -251,7 +277,7 @@ def _reviewed_rooms(raw: Optional[str], pages: list[dict[str, Any]]) -> Optional
     return rooms
 
 
-def _make_workbook(
+def _make_legacy_workbook(
     path: Path,
     wall_height_m: float,
     reviewed_rooms: Optional[list[dict[str, Any]]] = None,
@@ -268,10 +294,7 @@ def _make_workbook(
         for room in reviewed_rooms:
             page = pages[room["page"]]
             scale = page_scales[room["page"]] if page_scales else (px_per_unit or page["px_per_unit"])
-            measured = pixels_to_units(
-                (room["x"], room["y"], room["width"], room["height"]),
-                scale,
-            )
+            measured = pixels_to_units((room["x"], room["y"], room["width"], room["height"]), scale)
             measured["name"] = room["name"]
             all_items.extend(rooms_to_line_items([measured], kb, wall_height_m))
     else:
@@ -280,11 +303,9 @@ def _make_workbook(
                 scale = page_scales[page["page"]] if page_scales else (px_per_unit or page["px_per_unit"])
                 rooms = []
                 for room in page["rooms"]:
-                    measured = pixels_to_units(
-                        (room["x"], room["y"], room["width"], room["height"]),
-                        scale,
+                    rooms.append(
+                        pixels_to_units((room["x"], room["y"], room["width"], room["height"]), scale)
                     )
-                    rooms.append(measured)
                 all_items.extend(rooms_to_line_items(rooms, kb, wall_height_m))
             elif page["dimensions"]:
                 all_items.extend(dimensions_to_line_items(page["dimensions"], kb))
@@ -297,23 +318,66 @@ def _make_workbook(
 
 @app.get("/")
 def root():
-    return {"status": "ok", "message": "BOQ Automation API is running. See /docs"}
+    return {
+        "status": "ok",
+        "message": "BOQ Automation API is running. Use /preview and /generate for tender takeoff. See /docs",
+    }
 
 
 @app.post("/preview")
 async def preview(file: UploadFile = File(...)):
-    """Upload a drawing and return renderings plus automatically detected room rectangles."""
+    """Upload a drawing or IFC model and return pages and/or measured element drafts."""
     path = await _save_upload(file)
     try:
+        if _is_ifc(path):
+            try:
+                imported = import_ifc(path)
+            except RuntimeError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            except Exception as exc:
+                LOGGER.exception("Could not read IFC")
+                raise HTTPException(status_code=422, detail="Could not read the IFC model.") from exc
+            return {
+                "filename": file.filename,
+                "kind": "ifc",
+                "pages": [
+                    {
+                        "page": 0,
+                        "width": 1000,
+                        "height": 700,
+                        "image": None,
+                        "rooms": [],
+                        "elements": imported["elements"],
+                        "px_per_unit": 1,
+                        "scale_calibrated": False,
+                        "scale_detected": False,
+                        "dimensions": [],
+                    }
+                ],
+                "elements": imported["elements"],
+                "skipped": imported.get("skipped") or [],
+                "units": "m",
+                "scale_method": "ifc_units",
+                "schema": imported.get("schema"),
+                "unit_scale_to_metres": imported.get("unit_scale_to_metres"),
+                "element_count": imported.get("element_count", 0),
+                "room_count": 0,
+                "page_scales": [1],
+            }
+
         pages = _page_data(path)
+        elements = [el for page in pages for el in page.get("elements", [])]
         return {
             "filename": file.filename,
+            "kind": "drawing",
             "pages": pages,
             "rooms": [room for page in pages for room in page["rooms"]],
+            "elements": elements,
             "room_count": sum(len(page["rooms"]) for page in pages),
             "px_per_unit": pages[0]["px_per_unit"],
             "scale": pages[0]["px_per_unit"],
             "page_scales": [page["px_per_unit"] for page in pages],
+            "units": "px",
         }
     finally:
         path.unlink(missing_ok=True)
@@ -325,31 +389,55 @@ async def _generate(
     reviewed_rooms: Optional[str],
     px_per_unit: Optional[float],
     page_scales: Optional[str] = None,
+    takeoff: Optional[str] = None,
 ):
     wall_height = _number(wall_height_m, "wall_height_m", 0.1, 20)
     scale = None if px_per_unit is None else _number(px_per_unit, "px_per_unit", 1, 1_000_000)
     path = await _save_upload(file)
+    output_path = OUTPUT_DIR / f"generated_boq_{uuid.uuid4().hex}.xlsx"
     try:
-        # Validate the reviewed list against the actual page count before writing output.
-        pages = _page_data(path)
-        rooms = _reviewed_rooms(reviewed_rooms, pages)
-        scales = _page_scales(page_scales, pages)
-        output_path = OUTPUT_DIR / f"generated_boq_{uuid.uuid4().hex}.xlsx"
-        try:
-            _make_workbook(path, wall_height, rooms, scale, scales, pages, output_path)
+        if takeoff and takeoff.strip():
+            try:
+                pages = None if _is_ifc(path) else _page_data(path)
+                page_count = None if pages is None else len(pages)
+                doc = parse_takeoff(takeoff, page_count=page_count)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            if not doc.source_filename:
+                doc.source_filename = file.filename or path.name
+            kb = load_knowledge_base()
+            try:
+                write_tender_workbook(output_path, doc, kb, enforce_signoff=True)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
             return FileResponse(
                 output_path,
-                filename="generated_boq.xlsx",
+                filename="tender_boq.xlsx",
                 media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 background=BackgroundTask(output_path.unlink, missing_ok=True),
             )
-        except Exception:
-            output_path.unlink(missing_ok=True)
-            raise
+
+        if _is_ifc(path):
+            raise HTTPException(
+                status_code=422,
+                detail="IFC files require a reviewed takeoff JSON (confirm units, codes, and QS sign-off).",
+            )
+        pages = _page_data(path)
+        rooms = _reviewed_rooms(reviewed_rooms, pages)
+        scales = _page_scales(page_scales, pages)
+        _make_legacy_workbook(path, wall_height, rooms, scale, scales, pages, output_path)
+        return FileResponse(
+            output_path,
+            filename="generated_boq.xlsx",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            background=BackgroundTask(output_path.unlink, missing_ok=True),
+        )
     except HTTPException:
+        output_path.unlink(missing_ok=True)
         raise
     except Exception as exc:
         LOGGER.exception("Could not generate BOQ")
+        output_path.unlink(missing_ok=True)
         raise HTTPException(status_code=422, detail="Could not generate the BOQ.") from exc
     finally:
         path.unlink(missing_ok=True)
@@ -362,9 +450,10 @@ async def generate(
     px_per_unit: Optional[float] = Form(None),
     page_scales: Optional[str] = Form(None),
     wall_height_m: float = Form(3.0),
+    takeoff: Optional[str] = Form(None),
 ):
-    """Generate Excel from the original drawing and the user's reviewed rectangles/scale."""
-    return await _generate(file, wall_height_m, reviewed_rooms, px_per_unit, page_scales)
+    """Generate a tender workbook from takeoff JSON, or a legacy sheet from reviewed rooms."""
+    return await _generate(file, wall_height_m, reviewed_rooms, px_per_unit, page_scales, takeoff)
 
 
 @app.post("/generate-boq")
@@ -374,6 +463,47 @@ async def generate_boq(
     reviewed_rooms: Optional[str] = Form(None),
     px_per_unit: Optional[float] = Form(None),
     page_scales: Optional[str] = Form(None),
+    takeoff: Optional[str] = Form(None),
 ):
-    """Backward-compatible generation endpoint; review fields are optional."""
-    return await _generate(file, wall_height_m, reviewed_rooms, px_per_unit, page_scales)
+    """Backward-compatible generation endpoint."""
+    return await _generate(file, wall_height_m, reviewed_rooms, px_per_unit, page_scales, takeoff)
+
+
+@app.post("/qa-validate")
+async def qa_validate(takeoff: str = Form(...)):
+    """Validate QA requirements for tender-grade work."""
+    try:
+        doc = parse_takeoff(takeoff)
+        is_valid, issues = validate_qa_requirements(doc)
+        return {
+            "valid": is_valid,
+            "issues": issues,
+            "qa_status": doc.qa_status,
+            "qs_signed": doc.qs_signed,
+            "measurement_standard": doc.measurement_standard,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/qa-review")
+async def qa_review(
+    takeoff: str = Form(...),
+    reviewer: str = Form(...),
+    status: str = Form(...),
+    comments: Optional[str] = Form(None),
+):
+    """Record a QA review for the takeoff document."""
+    try:
+        doc = parse_takeoff(takeoff)
+        comments_list = [comments] if comments else []
+        updated_doc = record_qa_review(doc, reviewer, status, comments_list)
+        return {
+            "qa_status": updated_doc.qa_status,
+            "qa_reviewer": updated_doc.qa_reviewer,
+            "qa_review_date": updated_doc.qa_review_date,
+            "qa_comments": updated_doc.qa_comments,
+            "revision_count": len(updated_doc.revision_history),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

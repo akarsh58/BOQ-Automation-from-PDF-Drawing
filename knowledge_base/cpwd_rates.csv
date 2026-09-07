@@ -1,21 +1,83 @@
 item_code,description,unit,rate_inr,category
 1.1,Earthwork excavation in foundation trenches,cum,220,Earthwork
 1.2,Backfilling with excavated earth,cum,120,Earthwork
+1.3,Earthwork excavation in plinth,cum,240,Earthwork
+1.4,Disposal of excavated earth (lead up to 50m),cum,80,Earthwork
+1.5,Sand filling in plinth,cum,350,Earthwork
 2.1,PCC 1:4:8 below foundation,cum,4800,Concrete
 2.2,RCC M20 in foundation/footing,cum,6800,Concrete
 2.3,RCC M20 in columns,cum,7200,Concrete
 2.4,RCC M20 in beams,cum,7000,Concrete
 2.5,RCC M20 in slabs,cum,6900,Concrete
+2.6,RCC M25 in structural elements,cum,7500,Concrete
+2.7,RCC M20 in stairs,cum,7100,Concrete
+2.8,RCC M20 in chajjas/canopy,cum,6950,Concrete
+2.9,Reinforcement steel (fabrication & placing),kg,65,Concrete
+2.10,Shuttering/formwork for RCC,sqm,550,Concrete
 3.1,Brickwork in CM 1:6 in superstructure,cum,5200,Masonry
 3.2,Half brick partition wall,sqm,650,Masonry
+3.3,Brickwork in foundation,cum,5400,Masonry
+3.4,Brickwork in CM 1:4 (rich mortar),cum,5600,Masonry
+3.5,AAC block masonry,cum,4800,Masonry
+3.6,Dado with ceramic tiles,sqm,780,Masonry
 4.1,12mm cement plaster internal,sqm,220,Finishing
 4.2,20mm cement plaster external,sqm,290,Finishing
+4.3,6mm cement plaster (ceiling),sqm,180,Finishing
+4.4,Pointing with cement mortar,sqm,85,Finishing
+4.5,White washing (2 coats),sqm,15,Finishing
+4.6,Distempering (2 coats),sqm,35,Finishing
+4.7,Texture painting external,sqm,180,Finishing
+4.8,PU coating for wooden surfaces,sqm,250,Finishing
 5.1,Vitrified tile flooring,sqm,950,Flooring
 5.2,Ceramic tile dado,sqm,780,Flooring
+5.3,Marble flooring,sqm,1200,Flooring
+5.4,Granite flooring,sqm,1400,Flooring
+5.5,Kota stone flooring,sqm,850,Flooring
+5.6,Cement concrete flooring,sqm,450,Flooring
+5.7,IPS flooring,sqm,480,Flooring
+5.8,Skirting (vitrified tiles),rm,120,Flooring
+5.9,Anti-skid tiles flooring,sqm,880,Flooring
+5.10,Wooden laminate flooring,sqm,650,Flooring
 6.1,Painting with acrylic emulsion (2 coats),sqm,120,Painting
 6.2,Weatherproof exterior paint,sqm,150,Painting
+6.3,Enamel painting (wood/metal),sqm,180,Painting
+6.4,Wall putty application,sqm,45,Painting
+6.5,Primer coat,sqm,35,Painting
+6.6,Wallpaper application,sqm,200,Painting
 7.1,Flush door with frame,each,8500,Doors_Windows
 7.2,Aluminium sliding window,sqm,4200,Doors_Windows
+7.3,Steel window/door with shutters,sqm,3800,Doors_Windows
+7.4,UPVC window,sqm,4500,Doors_Windows
+7.5,Frames with sal wood,cum,12000,Doors_Windows
+7.6,Frames with teak wood,cum,15000,Doors_Windows
+7.7,Glass partition (10mm),sqm,1800,Doors_Windows
+7.8,Rolling shutters,sqm,2500,Doors_Windows
 8.1,Internal electrical wiring point,point,850,Electrical
 8.2,Plumbing pipeline (CPVC) per point,point,1200,Plumbing
+8.3,Switch board (modular),each,450,Electrical
+8.4,Light point (fixture),each,550,Electrical
+8.5,Fan point (ceiling fan),each,750,Electrical
+8.6,MCB distribution board,each,1200,Electrical
+8.7,Concealed PVC conduit (running meter),rm,45,Electrical
+8.8,Water supply point,point,950,Plumbing
+8.9,Drainage point,point,1100,Plumbing
+8.10,Septic tank construction,cum,6500,Plumbing
 9.1,Waterproofing treatment,sqm,380,Waterproofing
+9.2,Waterproofing for toilets,sqm,450,Waterproofing
+9.3,Terrace waterproofing,sqm,520,Waterproofing
+9.4,Expansion joint filler,rm,85,Waterproofing
+9.5,Chemical injection for dampness,sqm,180,Waterproofing
+10.1,Steel railing (stainless steel),rm,650,Metal_Work
+10.2,Mild steel staircase fabrication,kg,75,Metal_Work
+10.3,Grills/windows security,kg,70,Metal_Work
+10.4,Gate fabrication (steel),kg,80,Metal_Work
+10.5,Structural steel fabrication,kg,72,Metal_Work
+11.1,Asphalt road laying,cum,3200,Roads
+11.2,Paving blocks interlocking,sqm,280,Roads
+11.3,Kerb stone laying,rm,180,Roads
+11.4,CC road surface,cum,3500,Roads
+12.1,Landscaping (plants & soil),sqm,250,Landscaping
+12.2,Lawn development,sqm,180,Landscaping
+12.3,Tree plantation (large),each,850,Landscaping
+12.4,Tree plantation (small),each,350,Landscaping
+12.5,Irrigation system point,point,450,Landscaping

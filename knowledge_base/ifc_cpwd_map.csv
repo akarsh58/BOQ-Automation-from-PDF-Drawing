@@ -1,0 +1,18 @@
+ifc_type,keyword,item_code,notes
+IfcWall,,3.1,Default superstructure brickwork mapping
+IfcWallStandardCase,,3.1,
+IfcCurtainWall,,3.1,
+IfcSpace,,5.1,Floor finish from space area
+IfcSlab,,2.5,RCC slab unless keyword matches
+IfcSlab,floor,2.5,
+IfcSlab,roof,2.5,
+IfcColumn,,2.3,
+IfcBeam,,2.4,
+IfcMember,,2.4,
+IfcDoor,,7.1,
+IfcWindow,,7.2,
+IfcFooting,,2.2,
+IfcPadFooting,,2.2,
+IfcPile,,2.2,
+IfcEarthworksCut,,1.1,
+IfcCivilElement,excav,1.1,
