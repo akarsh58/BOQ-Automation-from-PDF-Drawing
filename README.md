@@ -9,8 +9,9 @@ and automatically generates a structured, editable Bill of Quantities (BOQ) in E
 2. **Text extraction** — `pdfplumber` reads embedded text from vector PDFs;
    `pytesseract` (OCR) reads text from scanned drawings/images.
 3. **Shape detection** — `OpenCV` detects room/wall rectangles from the rendered page image.
-4. **Scale calibration** — Uses detected scale text only as a preview suggestion;
-   every 2D page must be manually calibrated or confirmed before tender export.
+4. **Scale calibration** — Uses an authoritative PDF-render/DPI/1:N calculation
+   when reliable scale text is present. Missing scale remains `UNKNOWN` and any
+   fallback geometry is explicitly preliminary.
 5. **Quantity computation** — For each detected room: floor area, wall area, wall volume
    (assumes standard wall height, configurable).
 6. **Pricing** — Quantities are matched against `knowledge_base/cpwd_rates.csv`
@@ -83,9 +84,9 @@ development ports by default. For a deployed frontend, set
 
 Single-shot generation uses detected geometry and produces a clearly labelled
 preliminary estimate; it never creates QS approval, a signature, or IFC-unit
-confirmation. If no rooms are detected, dimension strings are used as a
-flooring fallback; a drawing with neither measurable rooms nor dimensions is
-rejected explicitly. Missing or low-confidence scale is recorded as a
+confirmation. If no rooms are detected, the workbook is still exported as a
+preliminary result with a deficiency; unassociated dimension strings are never
+converted directly into flooring. Missing or low-confidence scale is recorded as a
 deficiency, and the fallback quantity must be confirmed before tender use.
 Automatic results must be reviewed and signed off before tender award. The
 detailed taking-off sheet records measured quantity, wastage quantity, and
@@ -94,7 +95,9 @@ quantity can be audited.
 
 The original `POST /generate-boq` endpoint remains available for compatibility.
 Both generation endpoints accept reviewed `takeoff` JSON or perform the
-single-shot automatic path when no review payload is supplied.
+single-shot automatic path when no review payload is supplied. Automatic
+workbooks include `BOQ`, `Takeoff`, `QA`, `Deficiencies`, and `Detected Geometry`
+sheets in addition to the detailed audit sheets.
 Uploads are validated (type, size, decoded content, and render limits), and
 temporary files are cleaned up after every request.
 

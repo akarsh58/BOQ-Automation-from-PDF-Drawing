@@ -20,9 +20,17 @@ DIM_PATTERN = re.compile(
 NUM_PATTERN = re.compile(r"\d+(?:\.\d+)?")
 ROOM_LABEL_PATTERN = re.compile(
     r"\b(?:bedroom|living(?:\s+room)?|dining(?:\s+room)?|kitchen|toilet|bathroom|"
-    r"wc|store|study|office|lobby|corridor|passage|balcony|verandah|utility|room)\b",
+    r"wc|store|study|office|lobby|corridor|passage|balcony|verandah|utility|room|"
+    r"mbr|br(?:[- ]?\d+)?|bed(?:[- ]?\d+)?|liv|living|din|dining|kit|t&?b|pdr|"
+    r"bal|ver|passage)\b",
     re.IGNORECASE,
 )
+ROOM_LABELS = {
+    "mbr": "Master Bedroom", "br": "Bedroom", "bed": "Bedroom",
+    "liv": "Living Room", "living": "Living Room", "din": "Dining Room",
+    "dining": "Dining Room", "kit": "Kitchen", "t&b": "Toilet",
+    "tb": "Toilet", "pdr": "Powder Room", "bal": "Balcony", "ver": "Verandah",
+}
 MAX_PDF_PAGES = 50
 MAX_RENDER_PIXELS = 60_000_000
 
@@ -88,7 +96,7 @@ def extract_room_labels(image):
         if confidence >= 0 and width > 0 and height > 0:
             labels.append(
                 {
-                    "text": text[:80],
+                    "text": normalize_room_label(text)[:80],
                     "x": x,
                     "y": y,
                     "width": width,
@@ -97,6 +105,16 @@ def extract_room_labels(image):
                 }
             )
     return labels
+
+
+def normalize_room_label(text: str) -> str:
+    """Normalize common plan abbreviations while preserving numbered rooms."""
+    cleaned = " ".join(str(text).split()).strip()
+    match = re.fullmatch(r"([A-Za-z&]+)(?:[- ]?(\d+))?", cleaned)
+    if not match:
+        return cleaned
+    name = ROOM_LABELS.get(match.group(1).lower(), cleaned.title())
+    return f"{name} {match.group(2)}" if match.group(2) else name
 
 
 def assign_room_labels(boxes, labels):
@@ -205,7 +223,34 @@ def pixels_to_units(box, px_per_unit, unit="m"):
     }
 
 
-def estimate_scale_from_text(text, default_px_per_unit=50, render_dpi=200, drawing_dpi=72):
+def calculate_pixels_per_real_unit(
+    scale_denominator: float,
+    render_dpi: float,
+    *,
+    paper_unit: str = "mm",
+    real_unit: str = "m",
+) -> float:
+    """Calculate pixels per real-world unit for a PDF rendered at ``render_dpi``.
+
+    A PDF is rendered at ``render_dpi`` pixels per inch. At scale 1:N, one
+    paper unit represents N real-world units. The calculation converts paper
+    units to inches and real-world units to millimetres; it does not depend on
+    page orientation or guessed room dimensions.
+    """
+    if not np.isfinite(scale_denominator) or scale_denominator <= 0:
+        raise ValueError("scale_denominator must be positive")
+    if not np.isfinite(render_dpi) or render_dpi <= 0:
+        raise ValueError("render_dpi must be positive")
+    paper_to_mm = {"mm": 1.0, "cm": 10.0, "in": 25.4}
+    real_to_mm = {"mm": 1.0, "cm": 10.0, "m": 1000.0, "in": 25.4, "ft": 304.8}
+    if paper_unit not in paper_to_mm or real_unit not in real_to_mm:
+        raise ValueError("Unsupported paper or real-world unit")
+    paper_units_per_inch = 25.4 / paper_to_mm[paper_unit]
+    real_mm = real_to_mm[real_unit]
+    return render_dpi / paper_units_per_inch * real_mm / scale_denominator
+
+
+def estimate_scale_from_text(text, render_dpi=200):
     """
     Estimate pixels-per-real-world-unit (meter) from 'SCALE 1:N' text in the drawing.
 
@@ -216,26 +261,15 @@ def estimate_scale_from_text(text, default_px_per_unit=50, render_dpi=200, drawi
     This function returns px_per_unit already adjusted for that ratio, so callers
     can directly use it with pixels_to_units() on images from pdf_to_images(dpi=render_dpi).
 
-    Falls back to a default (also DPI-adjusted) if no scale text is found. In
-    production, prefer manual calibration: let the user click two points of
-    known real-world distance on the rendered image.
+    Returns ``None`` when no scale text is found. Callers may use image-space
+    fallback geometry for a preliminary preview, but must record that scale as
+    unknown rather than presenting it as measured.
     """
-    if render_dpi <= 0 or drawing_dpi <= 0:
-        raise ValueError("DPI values must be positive")
-    if default_px_per_unit <= 0:
-        raise ValueError("default_px_per_unit must be positive")
-    dpi_ratio = render_dpi / drawing_dpi
-    m = re.search(r"\bSCALE\s*1\s*[:/]\s*(\d+(?:\.\d+)?)\b", text, re.IGNORECASE)
+    m = re.search(r"(?:\bSCALE\s*(?:=)?\s*)?\b1\s*[:/]\s*(\d+(?:\.\d+)?)\b", text or "", re.IGNORECASE)
     if m:
         ratio = float(m.group(1))
-        if ratio <= 0:
-            return default_px_per_unit * dpi_ratio
-        base_px_per_unit = default_px_per_unit / (ratio / 100)
-    else:
-        base_px_per_unit = default_px_per_unit
-    # The geometry is rendered at ``render_dpi`` while the scale convention is
-    # based on drawing points.  Return the adjusted value for the actual image.
-    return base_px_per_unit * dpi_ratio
+        return calculate_pixels_per_real_unit(ratio, render_dpi)
+    return None
 
 
 # ========== INTELLIGENT AUTOMATIC DETECTION ==========
@@ -273,13 +307,13 @@ def auto_detect_scale(image, text, render_dpi=200):
             ratio = float(m.group(1))
             dpi_ratio = render_dpi / 72
             if ratio > 0:
-                px_per_m = max(5, (100 / (ratio / 100)) * dpi_ratio)
+                px_per_m = calculate_pixels_per_real_unit(ratio, render_dpi)
                 return px_per_m, 0.95, "text_scale", {"scale_text": m.group(0), "ratio": ratio}
         m2 = re.search(r"\b1\s*[:/]\s*(\d+(?:\.\d+)?)\b", text)
         if m2 and "scale" in text.lower():
             ratio = float(m2.group(1))
             dpi_ratio = render_dpi / 72
-            px_per_m = max(5, (100 / (ratio / 100)) * dpi_ratio)
+            px_per_m = calculate_pixels_per_real_unit(ratio, render_dpi)
             return px_per_m, 0.85, "scale_text", {"ratio": ratio}
 
     return None, 0.0, "unknown", {"note": "No scale detected"}
@@ -466,7 +500,10 @@ def build_takeoff_from_detection(image, text, rooms, render_dpi=200):
             "id": wall["id"],
             "type": "wall",
             "name": wall["name"],
-            "points": wall["points"],
+            "points": [
+                [round(point[0] / px_per_m, 3), round(point[1] / px_per_m, 3)]
+                for point in wall["points"]
+            ],
             "thickness_m": wall["thickness_m"],
             "height_m": wall["height_m"],
             "host_space_ids": wall["host_space_ids"],
@@ -511,7 +548,10 @@ def build_takeoff_from_detection(image, text, rooms, render_dpi=200):
             "calibrated": True,
         }] if px_per_m else [],
         "elements": elements,
-        "notes": [f"Auto-detected scale: {scale_method} with confidence {scale_confidence:.2f}"],
+        "notes": [
+            f"Auto-detected scale: {scale_method} with confidence {scale_confidence:.2f}",
+            scale_assumption,
+        ] if scale_assumption else [f"Auto-detected scale: {scale_method} with confidence {scale_confidence:.2f}"],
     }
     
     return takeoff_data

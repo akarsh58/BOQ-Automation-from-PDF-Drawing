@@ -912,10 +912,13 @@ def abstract_from_lines(lines: list[MeasurementLine], kb: pd.DataFrame) -> list[
                 "unit": line.unit,
                 "quantity": 0.0,
                 "provisional": False,
+                "source": line.source,
+                "confidence": 0.5 if line.provisional else 1.0,
             },
         )
         bucket["quantity"] = round(bucket["quantity"] + line.quantity, 3)
         bucket["provisional"] = bucket["provisional"] or line.provisional
+        bucket["confidence"] = min(bucket["confidence"], 0.5 if line.provisional else 1.0)
         if line.description:
             bucket["description"] = line.description
         if line.unit:

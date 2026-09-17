@@ -30,6 +30,7 @@ from app.extraction import (
     extract_text_ocr,
     extract_room_labels,
     assign_room_labels,
+    auto_detect_openings,
     extract_text_vector,
     find_dimension_strings,
     pdf_to_images,
@@ -186,16 +187,20 @@ def _page_data(path: Path) -> list[dict[str, Any]]:
             except Exception:
                 text = ""
         px_per_unit = estimate_scale_from_text(text, render_dpi=RENDER_DPI)
-        scale_match = re.search(r"\bSCALE\s*1\s*[:/]\s*(\d+(?:\.\d+)?)\b", text, re.IGNORECASE)
+        scale_match = re.search(r"(?:\bSCALE\s*(?:=)?\s*)?\b1\s*[:/]\s*(\d+(?:\.\d+)?)\b", text, re.IGNORECASE)
         scale_confidence = 0.95 if scale_match else 0.0
-        scale_method = "text_scale" if scale_match else "missing"
-        scale_assumption = "" if scale_match else "No reliable scale text; fallback render scale is preliminary only."
+        scale_method = "text_scale" if scale_match else "unknown"
+        scale_assumption = "" if scale_match else "No reliable scale text; 50 px/m render fallback is preliminary only."
+        # Geometry can still be previewed when scale is unknown, but the
+        # assumption is explicit and is never presented as measured.
+        px_per_unit = px_per_unit or 50.0
         boxes = detect_rooms_walls(image)
+        sorted_boxes = sorted(boxes, key=lambda b: (b[1], b[0]))
+        openings = auto_detect_openings(sorted_boxes, text, image.shape)
         try:
             room_labels = extract_room_labels(image)
         except Exception:
             room_labels = []
-        sorted_boxes = sorted(boxes, key=lambda b: (b[1], b[0]))
         label_assignments = assign_room_labels(sorted_boxes, room_labels)
         rooms = []
         elements = []
@@ -239,11 +244,14 @@ def _page_data(path: Path) -> list[dict[str, Any]]:
                 "scale_confidence": scale_confidence,
                 "scale_method": scale_method,
                 "scale_assumption": scale_assumption,
+                "scale_status": "DETECTED" if scale_match else "UNKNOWN",
                 "scale_calibrated": False,
                 "scale_detected": bool(
                     re.search(r"\bSCALE\s*1\s*[:/]\s*\d+(?:\.\d+)?\b", text, re.IGNORECASE)
                 ),
                 "dimensions": find_dimension_strings(text),
+                "text": text,
+                "openings": openings,
             }
         )
     return pages
@@ -344,8 +352,8 @@ def _make_legacy_workbook(
                         pixels_to_units((room["x"], room["y"], room["width"], room["height"]), scale)
                     )
                 all_items.extend(rooms_to_line_items(rooms, kb, wall_height_m, wall_thickness_m))
-            elif page["dimensions"]:
-                all_items.extend(dimensions_to_line_items(page["dimensions"], kb))
+            # Unassociated dimension strings are retained as QA candidates by
+            # preview; they are never converted into flooring quantities.
 
     dataframe = add_summary_row(build_boq_dataframe(all_items))
     output_path = output_path or (OUTPUT_DIR / "generated_boq.xlsx")
@@ -400,6 +408,7 @@ def _automatic_takeoff(
                     "extra": {
                         "detection_confidence": float(room.get("confidence") or 0.0),
                         "pixel_box": [room["x"], room["y"], room["width"], room["height"]],
+                        "derivation": "DETECTED",
                     },
                 }
             )
@@ -428,12 +437,36 @@ def _automatic_takeoff(
                         "host_space_ids": [room_id],
                         "shared": False,
                         "source": "2d",
+                        "extra": {
+                            "derivation": "INFERRED",
+                            "confidence": 0.35,
+                            "wall_height_source": "ASSUMED",
+                            "wall_thickness_source": "ASSUMED",
+                        },
                     }
                     walls_by_key[wall_key] = wall
                     elements.append(wall)
                 elif room_id not in wall["host_space_ids"]:
                     wall["host_space_ids"].append(room_id)
                     wall["shared"] = True
+        for opening in page.get("openings") or []:
+            elements.append(
+                {
+                    "id": f"p{page_index}-{opening['id']}",
+                    "type": "opening",
+                    "name": opening["name"],
+                    "page": page_index,
+                    "opening_kind": opening["opening_kind"],
+                    "width_m": opening["width_m"],
+                    "height_m": opening["height_m"],
+                    "source": "2d",
+                    "extra": {
+                        "derivation": "DETECTED",
+                        "confidence": 0.4,
+                        "dimension_status": "DETECTED",
+                    },
+                }
+            )
     return parse_takeoff(
         {
             "project_name": Path(filename).stem,
@@ -567,32 +600,9 @@ async def _generate(
         rooms = _reviewed_rooms(reviewed_rooms, pages)
         scales = _page_scales(page_scales, pages)
         if rooms is None:
-            # The default route is a single-shot extraction pipeline.  Keep
-            # reviewed_rooms as an optional accuracy override for existing
-            # clients, but never block generation when detector output exists.
+            # Single-shot generation remains available, but no unassociated
+            # dimension string is converted into a flooring quantity.
             detected_scales = [page["px_per_unit"] for page in pages]
-            if not any(page.get("rooms") for page in pages):
-                if not any(page.get("dimensions") for page in pages):
-                    raise HTTPException(
-                        status_code=422,
-                        detail="No measurable rooms or dimensions were detected in the drawing.",
-                    )
-                _make_legacy_workbook(
-                    path,
-                    wall_height,
-                    wall_thickness,
-                    reviewed_rooms=[],
-                    px_per_unit=scale,
-                    page_scales=scales or detected_scales,
-                    pages=pages,
-                    output_path=output_path,
-                )
-                return FileResponse(
-                    output_path,
-                    filename="generated_boq.xlsx",
-                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    background=BackgroundTask(output_path.unlink, missing_ok=True),
-                )
             confidence = 1.0 if scales else min(float(page.get("scale_confidence", 0.0)) for page in pages)
             method = "user_confirmed" if scales else ",".join(sorted({page.get("scale_method", "missing") for page in pages}))
             assumption = "" if scales else "; ".join(

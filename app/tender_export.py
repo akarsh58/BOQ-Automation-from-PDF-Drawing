@@ -63,12 +63,15 @@ def write_tender_workbook(
     _write_cover(wb.active, doc, lines, abstract, deficiencies)
     _write_summary(wb.create_sheet("Executive Summary"), abstract, lines, deficiencies, kb)
     _write_detailed(wb.create_sheet("Detailed measurements"), lines)
+    _write_detailed(wb.create_sheet("Takeoff"), lines)
     _write_abstract(wb.create_sheet("Abstract of quantities"), abstract)
     _write_priced(wb.create_sheet("Priced BOQ"), abstract)
+    _write_priced(wb.create_sheet("BOQ"), abstract)
     _write_category_summary(wb.create_sheet("Category Summary"), abstract, kb)
     _write_deficiencies(wb.create_sheet("Deficiencies"), deficiencies)
     _write_measurement_notes(wb.create_sheet("Measurement Notes"), lines)
     _write_detected_geometry(wb.create_sheet("Detected Geometry"), doc)
+    _write_qa(wb.create_sheet("QA"), doc, deficiencies)
     wb.save(output_path)
     return output_path
 
@@ -213,6 +216,8 @@ def _write_detailed(ws, lines: list[MeasurementLine]):
         "IS1200_note",
         "provisional",
         "source",
+        "confidence",
+        "status",
     ]
     _header_row(ws, headers)
     for row_index, line in enumerate(lines, 2):
@@ -233,6 +238,8 @@ def _write_detailed(ws, lines: list[MeasurementLine]):
             line.is1200_note,
             "Yes" if line.provisional else "No",
             line.source,
+            0.5 if line.provisional else 1.0,
+            "PRELIMINARY" if line.provisional else "MEASURED",
         ]
         for col, value in enumerate(values, 1):
             cell = ws.cell(row_index, col, value)
@@ -264,7 +271,7 @@ def _write_abstract(ws, abstract: list[dict[str, Any]]):
 
 
 def _write_priced(ws, abstract: list[dict[str, Any]]):
-    headers = ["sr_no", "item_code", "description", "unit", "quantity", "rate_inr", "amount_inr", "status"]
+    headers = ["sr_no", "item_code", "description", "unit", "quantity", "rate_inr", "amount_inr", "source", "confidence", "status"]
     _header_row(ws, headers)
     total = 0.0
     for row_index, row in enumerate(abstract, 2):
@@ -280,6 +287,8 @@ def _write_priced(ws, abstract: list[dict[str, Any]]):
             row["quantity"],
             row["rate_inr"],
             amount,
+            row.get("source", "measurement"),
+            row.get("confidence", 0.5 if row["provisional"] else 1.0),
             status,
         ]
         for col, value in enumerate(values, 1):
@@ -289,7 +298,7 @@ def _write_priced(ws, abstract: list[dict[str, Any]]):
     total_row = len(abstract) + 2
     ws.cell(total_row, 5, "TOTAL (priced items only)")
     ws.cell(total_row, 7, round(total, 2))
-    for col in range(1, 9):
+    for col in range(1, 11):
         ws.cell(total_row, col).fill = TOTAL_FILL
         ws.cell(total_row, col).font = Font(bold=True)
     _autosize(ws)
@@ -382,7 +391,7 @@ def _write_measurement_notes(ws, lines: list[MeasurementLine]):
 
 
 def _write_detected_geometry(ws, doc: TakeoffDocument):
-    _header_row(ws, ["element_id", "type", "page", "name", "detection_confidence", "source", "host_spaces", "assumptions"])
+    _header_row(ws, ["element_id", "type", "page", "name", "detection_confidence", "source", "derivation", "host_spaces", "assumptions"])
     row = 2
     for element in doc.elements:
         if element.type not in {"space", "wall", "opening"}:
@@ -394,6 +403,7 @@ def _write_detected_geometry(ws, doc: TakeoffDocument):
             element.name,
             element.extra.get("detection_confidence", ""),
             element.source,
+            element.extra.get("derivation", "MEASURED" if not doc.automatic else "UNKNOWN"),
             ", ".join(element.host_space_ids),
             "Automatic suggestion; geometry and relationships require QS review." if doc.automatic else "",
         ]
@@ -404,6 +414,30 @@ def _write_detected_geometry(ws, doc: TakeoffDocument):
         row += 1
     if row == 2:
         ws.cell(2, 1, "No detected geometry recorded.")
+    _autosize(ws)
+
+
+def _write_qa(ws, doc: TakeoffDocument, deficiencies: list[Deficiency]):
+    _header_row(ws, ["check", "value", "status"])
+    rooms = sum(1 for item in doc.elements if item.type == "space")
+    walls = sum(1 for item in doc.elements if item.type == "wall")
+    doors = sum(1 for item in doc.elements if item.type == "opening" and item.opening_kind == "door")
+    windows = sum(1 for item in doc.elements if item.type == "opening" and item.opening_kind == "window")
+    rows = [
+        ("Overall Status", "AUTOMATED_PRELIMINARY" if doc.automatic else ("QS_SIGNED" if doc.qs_signed else "DRAFT"), "REVIEW_REQUIRED" if doc.automatic else "OK"),
+        ("Scale Status", "DETECTED" if doc.scale_confidence >= 0.8 else "UNKNOWN", "OK" if doc.scale_confidence >= 0.8 else "WARNING"),
+        ("Scale Confidence", doc.scale_confidence, "OK" if doc.scale_confidence >= 0.8 else "WARNING"),
+        ("Detected Rooms", rooms, "INFO"),
+        ("Detected Walls", walls, "INFO"),
+        ("Detected Doors", doors, "INFO"),
+        ("Detected Windows", windows, "INFO"),
+        ("Warnings / deficiencies", len(deficiencies), "WARNING" if deficiencies else "OK"),
+        ("QS sign-off", "NOT SUPPLIED" if not doc.qs_signed else "SUPPLIED", "REQUIRED" if not doc.qs_signed else "OK"),
+        ("Assumptions", "; ".join(doc.notes), "VISIBLE"),
+    ]
+    for row, values in enumerate(rows, 2):
+        for col, value in enumerate(values, 1):
+            ws.cell(row, col, value)
     _autosize(ws)
 
 
