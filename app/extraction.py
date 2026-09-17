@@ -406,12 +406,14 @@ def build_takeoff_from_detection(image, text, rooms, render_dpi=200):
     """
     px_per_m, scale_confidence, scale_method, scale_details = auto_detect_scale(image, text, render_dpi)
     
+    scale_assumption = ""
     if px_per_m is None:
         px_per_m = auto_estimate_scale_from_elements(rooms)
         if px_per_m is None:
             px_per_m = 50
             scale_method = "fallback"
             scale_confidence = 0.3
+        scale_assumption = "No reliable scale text; fallback pixels-per-metre is preliminary only."
     
     rooms_m = []
     room_id = 0
@@ -430,10 +432,13 @@ def build_takeoff_from_detection(image, text, rooms, render_dpi=200):
             "points": [[0, 0], [width_m, 0], [width_m, height_m], [0, height_m]],
             "width_m": width_m,
             "height_m": height_m,
+            "x_m": round(x / px_per_m, 2),
+            "y_m": round(y / px_per_m, 2),
             "area": area,
             "item_code": 5.1,
             "confidence": scale_confidence,
             "source": "auto-detected",
+            "detection_confidence": float(room.get("confidence", 0.0) or 0.0),
         })
     
     walls = auto_detect_walls(rooms)
@@ -446,9 +451,15 @@ def build_takeoff_from_detection(image, text, rooms, render_dpi=200):
             "type": "space",
             "name": room["name"],
             "page": 0,
-            "points": [[0, 0], [room["width_m"], 0], [room["width_m"], room["height_m"]], [0, room["height_m"]]],
+            "points": [
+                [room["x_m"], room["y_m"]],
+                [room["x_m"] + room["width_m"], room["y_m"]],
+                [room["x_m"] + room["width_m"], room["y_m"] + room["height_m"]],
+                [room["x_m"], room["y_m"] + room["height_m"]],
+            ],
             "item_code": room["item_code"],
             "source": "auto-detected",
+            "extra": {"detection_confidence": room["detection_confidence"]},
         })
     for wall in walls:
         elements.append({
@@ -483,11 +494,15 @@ def build_takeoff_from_detection(image, text, rooms, render_dpi=200):
     takeoff_data = {
         "project_name": "Auto-detected Project",
         "source_filename": "auto_detected",
-        "qs_name": "Auto QS",
-        "qs_signed": True,
+        "qs_name": "",
+        "qs_signed": False,
         "units": "m",
         "scale_method": scale_method_str,
-        "ifc_units_confirmed": True,
+        "ifc_units_confirmed": False,
+        "automatic": True,
+        "preliminary": True,
+        "scale_confidence": scale_confidence,
+        "scale_assumption": scale_assumption,
         "measurement_standard": "IS 1200",
         "calibrations": [{
             "page": 0,

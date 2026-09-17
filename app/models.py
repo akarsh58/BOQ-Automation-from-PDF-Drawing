@@ -78,6 +78,8 @@ class Calibration:
     method: str = "manual"
     known_length_m: Optional[float] = None
     calibrated: bool = False
+    confidence: float = 0.0
+    assumption: str = ""
 
 
 @dataclass
@@ -141,6 +143,9 @@ class TakeoffDocument:
     qs_signed: bool = False
     units: str = "px"
     scale_method: str = "detected"
+    scale_confidence: float = 0.0
+    automatic: bool = False
+    preliminary: bool = False
     ifc_units_confirmed: bool = False
     calibrations: list[Calibration] = field(default_factory=list)
     elements: list[MeasuredElement] = field(default_factory=list)

@@ -186,6 +186,10 @@ def _page_data(path: Path) -> list[dict[str, Any]]:
             except Exception:
                 text = ""
         px_per_unit = estimate_scale_from_text(text, render_dpi=RENDER_DPI)
+        scale_match = re.search(r"\bSCALE\s*1\s*[:/]\s*(\d+(?:\.\d+)?)\b", text, re.IGNORECASE)
+        scale_confidence = 0.95 if scale_match else 0.0
+        scale_method = "text_scale" if scale_match else "missing"
+        scale_assumption = "" if scale_match else "No reliable scale text; fallback render scale is preliminary only."
         boxes = detect_rooms_walls(image)
         try:
             room_labels = extract_room_labels(image)
@@ -232,6 +236,9 @@ def _page_data(path: Path) -> list[dict[str, Any]]:
                 "rooms": rooms,
                 "elements": elements,
                 "px_per_unit": round(px_per_unit, 4),
+                "scale_confidence": scale_confidence,
+                "scale_method": scale_method,
+                "scale_assumption": scale_assumption,
                 "scale_calibrated": False,
                 "scale_detected": bool(
                     re.search(r"\bSCALE\s*1\s*[:/]\s*\d+(?:\.\d+)?\b", text, re.IGNORECASE)
@@ -352,6 +359,9 @@ def _automatic_takeoff(
     wall_height_m: float,
     wall_thickness_m: float,
     page_scales: Optional[list[float]] = None,
+    scale_confidence: float = 0.0,
+    scale_method: str = "missing",
+    scale_assumption: str = "",
 ) -> Any:
     """Create a complete metre-based takeoff from detector output.
 
@@ -364,9 +374,11 @@ def _automatic_takeoff(
     notes = [
         "Generated automatically from drawing geometry; no manual tracing or sign-off was supplied.",
         "Rooms are detected rectangular spaces and walls are their measured perimeters.",
-        "Scale is taken from drawing text when available, otherwise the calibrated render fallback.",
+        f"Scale method: {scale_method}; confidence: {scale_confidence:.2f}.",
         "Structural, MEP, openings, and earthwork quantities require source geometry and are not guessed.",
     ]
+    if scale_assumption:
+        notes.append(f"Scale assumption: {scale_assumption}")
     for page in pages:
         page_index = page["page"]
         scale = (page_scales or [p["px_per_unit"] for p in pages])[page_index]
@@ -385,6 +397,10 @@ def _automatic_takeoff(
                     "page": page_index,
                     "points": [[x, y], [x + width, y], [x + width, y + height], [x, y + height]],
                     "source": "2d",
+                    "extra": {
+                        "detection_confidence": float(room.get("confidence") or 0.0),
+                        "pixel_box": [room["x"], room["y"], room["width"], room["height"]],
+                    },
                 }
             )
             wall_points = [
@@ -422,11 +438,15 @@ def _automatic_takeoff(
         {
             "project_name": Path(filename).stem,
             "source_filename": filename,
-            "qs_name": "Automatic pipeline",
-            "qs_signed": True,
+            "qs_name": "",
+            "qs_signed": False,
             "units": "m",
-            "scale_method": "automatic",
-            "ifc_units_confirmed": True,
+            "scale_method": scale_method,
+            "scale_confidence": scale_confidence,
+            "scale_assumption": scale_assumption,
+            "automatic": True,
+            "preliminary": True,
+            "ifc_units_confirmed": False,
             "elements": elements,
             "notes": notes,
         }
@@ -508,6 +528,8 @@ async def _generate(
     px_per_unit: Optional[float],
     page_scales: Optional[str] = None,
     takeoff: Optional[str] = None,
+    qs_name: str = "",
+    qs_signed: bool = False,
 ):
     wall_height = _number(wall_height_m, "wall_height_m", 0.1, 20)
     wall_thickness = _number(wall_thickness_m, "wall_thickness_m", 0.01, 2)
@@ -571,9 +593,23 @@ async def _generate(
                     media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     background=BackgroundTask(output_path.unlink, missing_ok=True),
                 )
-            doc = _automatic_takeoff(pages, file.filename or path.name, wall_height, wall_thickness, scales or detected_scales)
+            confidence = 1.0 if scales else min(float(page.get("scale_confidence", 0.0)) for page in pages)
+            method = "user_confirmed" if scales else ",".join(sorted({page.get("scale_method", "missing") for page in pages}))
+            assumption = "" if scales else "; ".join(
+                page.get("scale_assumption", "") for page in pages if page.get("scale_assumption")
+            )
+            doc = _automatic_takeoff(
+                pages,
+                file.filename or path.name,
+                wall_height,
+                wall_thickness,
+                scales or detected_scales,
+                confidence,
+                method,
+                assumption,
+            )
             kb = load_knowledge_base()
-            write_tender_workbook(output_path, doc, kb, enforce_signoff=True)
+            write_tender_workbook(output_path, doc, kb, enforce_signoff=False)
             return FileResponse(
                 output_path,
                 filename="generated_boq.xlsx",
@@ -582,6 +618,11 @@ async def _generate(
             )
         if scales is None:
             scales = [page["px_per_unit"] for page in pages]
+        if not qs_signed or not qs_name.strip():
+            raise HTTPException(
+                status_code=422,
+                detail="Reviewed room generation requires QS name and sign-off. Use takeoff JSON for the full tender workflow.",
+            )
         _make_legacy_workbook(path, wall_height, wall_thickness, rooms, scale, scales, pages, output_path)
         return FileResponse(
             output_path,
@@ -609,9 +650,11 @@ async def generate(
     wall_height_m: float = Form(3.0),
     wall_thickness_m: float = Form(0.23),
     takeoff: Optional[str] = Form(None),
+    qs_name: str = Form(""),
+    qs_signed: bool = Form(False),
 ):
     """Generate a tender workbook from takeoff JSON, or a legacy sheet from reviewed rooms."""
-    return await _generate(file, wall_height_m, wall_thickness_m, reviewed_rooms, px_per_unit, page_scales, takeoff)
+    return await _generate(file, wall_height_m, wall_thickness_m, reviewed_rooms, px_per_unit, page_scales, takeoff, qs_name, qs_signed)
 
 
 @app.post("/generate-boq")
@@ -623,9 +666,11 @@ async def generate_boq(
     px_per_unit: Optional[float] = Form(None),
     page_scales: Optional[str] = Form(None),
     takeoff: Optional[str] = Form(None),
+    qs_name: str = Form(""),
+    qs_signed: bool = Form(False),
 ):
     """Backward-compatible generation endpoint."""
-    return await _generate(file, wall_height_m, wall_thickness_m, reviewed_rooms, px_per_unit, page_scales, takeoff)
+    return await _generate(file, wall_height_m, wall_thickness_m, reviewed_rooms, px_per_unit, page_scales, takeoff, qs_name, qs_signed)
 
 
 @app.post("/qa-validate")

@@ -81,12 +81,15 @@ development ports by default. For a deployed frontend, set
 `BOQ_CORS_ORIGINS` to a comma-separated allowlist (for example,
 `https://boq.example.com`) before starting Uvicorn.
 
-Single-shot generation uses detected geometry and automatic QS metadata so it can
-run unattended. If no rooms are detected, dimension strings are used as a
+Single-shot generation uses detected geometry and produces a clearly labelled
+preliminary estimate; it never creates QS approval, a signature, or IFC-unit
+confirmation. If no rooms are detected, dimension strings are used as a
 flooring fallback; a drawing with neither measurable rooms nor dimensions is
-rejected explicitly. Automatic results should still be reviewed before tender
-award. The detailed taking-off sheet records measured quantity, wastage quantity,
-and wastage percentage separately for masonry and concrete items so the final
+rejected explicitly. Missing or low-confidence scale is recorded as a
+deficiency, and the fallback quantity must be confirmed before tender use.
+Automatic results must be reviewed and signed off before tender award. The
+detailed taking-off sheet records measured quantity, wastage quantity, and
+wastage percentage separately for masonry and concrete items so the final
 quantity can be audited.
 
 The original `POST /generate-boq` endpoint remains available for compatibility.

@@ -1,134 +1,107 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BOQ Automation — QS-Assisted Takeoff</title>
-</head>
-<body>
-  <div class="container">
-    <header>
-      <h1>BOQ Automation</h1>
-      <p>Bill of Quantities generator from PDF/IFC drawings using IS 1200 and CPWD rates.</p>
-    </header>
-    <div class="workflow">
-      <h2>Workflow</h2>
-      <ol>
-        <li>Upload a PDF or IFC drawing</li>
-        <li>Auto-detect rooms, walls, openings with intelligent interpretation</li>
-        <li>Review/quick-adjust detected elements</li>
-        <li>Generate tender BOQ Excel workbook</li>
-      </ol>
-    </div>
-    <section class="section">
-      <h2>Upload Drawing</h2>
-<style>
-  :root{--primary:#1976d2;--secondary:#ffb300;--success:#4caf50;--error:#f44336;--bg:#fafafa;--card:#fff;--border:#eaeaea;--text:#333}
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Segoe UI',Verdana,Arial,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:2rem}
-  .container{max-width:1200px;margin:0 auto}
-  .header{margin-bottom:2rem;padding-bottom:2rem;border-bottom:1px solid var(--border)}
-  .workflow{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:1.5rem;margin:1.5rem 0}
-  .workflow ol{margin:0;padding-left:1.8rem}
-  .workflow li{margin:0.5rem 0}
-  .section{margin:2rem 0}
-  .section h2{color:var(--primary);margin-bottom:1rem;padding-bottom:0.5rem;border-bottom:1px solid var(--border)}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin:1.5rem 0}
-  @media(max-width:768px){.grid{grid-template-columns:1fr}}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:1.5rem;margin:1rem 0}
-  .element-card{background:#fafafa;border:1px solid var(--border);border-radius:4px;padding:1rem;margin:0.5rem 0}
-  .element-card h3{margin:0 0 0.5rem 0;font-size:1rem}
-  .form-group{margin:0.5rem 0}
-  .form-group label{display:block;margin-bottom:0.3rem;font-size:0.9rem}
-  .form-group input,.form-group select,.form-group textarea{width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:4px;background:#fff}
-  .btn{display:inline-block;padding:0.6rem 1.2rem;background:var(--primary);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.95rem;transition:background 0.2s}
-  .btn:hover{background:#1565c0}
-  .btn-secondary{background:#6c757d;opacity:0.8}
-  .btn-success{background:var(--success);opacity:0.9}
-  .btn-danger{background:var(--error);opacity:0.9}
-  .file-drop{border:2px dashed var(--border);border-radius:8px;padding:2rem;text-align:center;cursor:pointer;transition:border-color 0.2s}
-  .file-drop:hover{border-color:var(--primary)}
-  .file-drop input{display:none}
-  .element-list{max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:0.8rem;background:#fafafa;margin-top:0.5rem}
-  .element-item{background:#fff;padding:0.5rem;margin:0.3rem 0;border-radius:4px;display:flex;justify-content:space-between;align-items:center;border:1px solid #eee}
-  .element-item:hover{border-color:#c0c0c0}
-  .confidence-high{color:#2e7d32}
-  .confidence-medium{color:#f9a825}
-  .confidence-low{color:#e53935}
-  .scale-display{background:#e8f5e9;padding:1rem;border-radius:4px;margin:1rem 0}
-  .small{font-size:0.85rem;color:#666}
-  .mt-2{margin-top:0.5rem}
-  .w-100{width:100%}
-  .text-center{text-align:center}
-</style>
-      <div class="file-drop" id="drop-area">
-        <p>Drag & drop PDF or image here</p>
-        <p>or <b>click to browse</b> <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.webp,.ifc,.ifczip"></p>
-      </div>
-    </section>
-    <section class="section" id="auto-detect-section">
-      <h2>Auto-Detection Results</h2>
-      <div id="auto-detect-loading" style="display:none;color:#666">Auto-detecting...</div>
-      <div id="auto-detect-results" style="display:none">
-        <p><strong>Scale detected:</strong> <span id="detected-scale">—</span> px/m</p>
-        <p><strong>Strategy:</strong> <span id="detected-method">—</span></p>
-        <div class="grid">
-          <div class="element-card"><h3>Detected Rooms</h3><div id="rooms-list"></div></div>
-          <div class="element-card"><h3>Detected Walls</h3><div id="walls-list"></div></div>
-        </div>
-      </div>
-    </section>
-    <section class="section" id="review-section" style="display:none">
-      <h2>Review & Adjust</h2>
-      <div class="grid">
-        <div><h3>Rooms</h3><div id="review-rooms-list"></div></div>
-        <div><h3>Walls</h3><div id="review-walls-list"></div></div>
-      </div>
-      <div class="scale-display" id="scale-display">
-        <strong>Scale:</strong> <span id="scale-value">—</span> px/m
-        <button class="btn btn-secondary" onclick="calibrateScaleManual()">Manual Calibration</button>
-      </div>
-    </section>
-    <section class="section" id="generate-section" style="display:none">
-      <h2>Generate BOQ</h2>
-      <div class="form-group"><label>Wall Height (m): <input type="number" id="wall-height" value="3.0" step="0.1"></label></div>
-      <div class="form-group"><label>Wall Thickness (m): <input type="number" id="wall-thickness" value="0.23" step="0.01"></label></div>
-      <button class="btn btn-primary w-100" onclick="generateBOQ()">Generate Tender BOQ</button>
-    </section>
-    <footer>
-      <p>Knowledge base: CPWD-style rates from <code>knowledge_base/cpwd_rates.csv</code></p>
-      <p>Measurement standard: IS 1200 (Indian Standard)</p>
-    </footer>
-  </div>
-</body>
-</html>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BOQ Automation — QS-Assisted Takeoff</title>
+  <title>BOQ Automation - Preliminary Takeoff</title>
   <style>
-    body{font-family:sans-serif;margin:2rem;background:#fafafa;color:#333}
-    .card{background:#fff;border:1px solid #eaeaea;border-radius:6px;padding:1.5rem;margin:1rem 0;max-width:600px}
-    h1{margin-top:0}
-    .endpoint{font-family:monospace;font-size:0.85rem;background:#f0f5fa;border:1px solid #d0e0f0;border-radius:4px;padding:0.2rem 0.4rem;display:block;margin:0.5rem 0}
+    :root { font: 16px/1.4 system-ui, sans-serif; color: #233044; background: #f4f6f8; }
+    body { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    section, .room, .wall { background: white; border: 1px solid #dce2e8; border-radius: 8px; padding: 16px; margin: 12px 0; }
+    h1 { margin-top: 0; } h2 { color: #174a7c; }
+    button { background: #1769aa; color: white; border: 0; border-radius: 4px; padding: 9px 14px; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: wait; }
+    input { padding: 7px; border: 1px solid #b8c2cc; border-radius: 4px; max-width: 140px; }
+    label { display: inline-flex; gap: 6px; align-items: center; margin: 4px 12px 4px 0; }
+    .warning { background: #fff3cd; border-left: 4px solid #d99b00; padding: 10px; }
+    .error { background: #f8d7da; border-left: 4px solid #b02a37; padding: 10px; }
+    .muted { color: #5f6b78; } .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+    .hidden { display: none; } .confidence-low { color: #b02a37; font-weight: 700; }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>BOQ Automation</h1>
-    <p>Bill of Quantities generator from PDF/IFC drawings using IS 1200 and CPWD rates.</p>
-    <p><strong>Workflow:</strong></p>
-    <ol>
-      <li>Upload a PDF or IFC model via the API endpoint <code class="endpoint">POST /preview</code></li>
-      <li>Review detected rooms and walls, adjust scale calibration (<code class="endpoint">/generate</code> requires calibrated scales)</li>
-      <li>Generate the tender BOQ Excel workbook (<code class="endpoint">POST /generate</code> or <code class="endpoint">POST /generate-boq</code>)</li>
-      <li>Record QA reviews (<code class="endpoint">POST /qa-review</code>) and validate requirements (<code class="endpoint">POST /qa-validate</code>)</li>
-    </ol>
-    <p><strong>Knowledge base:</strong> CPWD-style rates from <code>knowledge_base/cpwd_rates.csv</code> (82 items, 13 categories).</p>
-    <p><strong>Measurement standard:</strong> IS 1200 (Indian Standard).</p>
-    <p>For a complete API server, run: <code class="endpoint">uvicorn app.main:app --reload</code></p>
-  </div>
+  <h1>BOQ Automation</h1>
+  <p>Upload a drawing for a preliminary estimate, or review and correct the detected takeoff before tender sign-off.</p>
+  <section>
+    <h2>1. Upload drawing</h2>
+    <input id="file" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.ifc,.ifczip">
+    <button id="preview">Detect rooms, walls and scale</button>
+    <p id="message" class="muted"></p>
+  </section>
+  <section id="results" class="hidden">
+    <h2>2. Detection review</h2>
+    <div id="scale"></div>
+    <div class="warning">Detected names, geometry, walls and scale are suggestions. Automatic output is preliminary and is not QS-approved.</div>
+    <div class="grid"><div><h3>Detected rooms (editable)</h3><div id="rooms"></div></div><div><h3>Detected walls / elements</h3><div id="elements"></div></div></div>
+  </section>
+  <section id="generate" class="hidden">
+    <h2>3. Generate</h2>
+    <label>Wall height (m) <input id="wallHeight" type="number" value="3" step=".01" min=".1"></label>
+    <label>Wall thickness (m) <input id="wallThickness" type="number" value=".23" step=".01" min=".01"></label>
+    <label>Confirmed scale (px/m, optional) <input id="confirmedScale" type="number" min="1" step=".01"></label>
+    <label>QS name <input id="qsName" type="text" placeholder="Required for reviewed export"></label>
+    <label><input id="qsSigned" type="checkbox"> I confirm QS review/sign-off</label>
+    <p class="muted">Use confirmed scale and reviewed rooms for a tender workflow. Without them, the download remains preliminary.</p>
+    <button id="automatic">Download preliminary BOQ</button>
+    <button id="reviewed">Download reviewed rooms BOQ</button>
+  </section>
+  <script>
+    const api = location.protocol === 'file:' ? 'http://localhost:8000' : '';
+    let file, previewData;
+    const $ = id => document.getElementById(id);
+    function status(text, error = false) { $('message').textContent = text; $('message').className = error ? 'error' : 'muted'; }
+    function num(value) { return Number(value); }
+    function render(data) {
+      previewData = data; $('results').classList.remove('hidden'); $('generate').classList.remove('hidden');
+      const pages = data.pages || [], scales = pages.map(p => p.px_per_unit);
+      const confidence = pages.map(p => Number(p.scale_confidence || 0));
+      $('scale').innerHTML = `<b>Scale:</b> ${scales.join(', ')} px/m; <b>method:</b> ${pages.map(p => p.scale_method || 'unknown').join(', ')}; <b>confidence:</b> ${confidence.map(v => v.toFixed(2)).join(', ')}`;
+      $('rooms').innerHTML = (data.rooms || []).map((r, i) => `<div class="room ${Number(r.confidence || 0) < .5 ? 'confidence-low' : ''}">
+        <b>Room ${i + 1}</b> <span>confidence ${(Number(r.confidence || 0)).toFixed(2)}</span><br>
+        <label>Name <input data-room="${i}" data-key="name" value="${String(r.name || '').replaceAll('"', '&quot;')}"></label>
+        <label>x <input type="number" data-room="${i}" data-key="x" value="${r.x}"></label>
+        <label>y <input type="number" data-room="${i}" data-key="y" value="${r.y}"></label>
+        <label>w <input type="number" data-room="${i}" data-key="width" value="${r.width}"></label>
+        <label>h <input type="number" data-room="${i}" data-key="height" value="${r.height}"></label>
+      </div>`).join('') || '<p class="muted">No rooms detected.</p>';
+      const elements = data.elements || [];
+      $('elements').innerHTML = elements.map(e => `<div class="wall"><b>${e.type}</b> ${e.name || e.id} <span class="muted">page ${Number(e.page) + 1}</span></div>`).join('') || '<p class="muted">No elements detected.</p>';
+    }
+    function reviewedRooms() {
+      return [...document.querySelectorAll('[data-room]')].reduce((rooms, input) => {
+        const i = Number(input.dataset.room); rooms[i] ||= { page: previewData.rooms[i].page };
+        rooms[i][input.dataset.key] = input.dataset.key === 'name' ? input.value : num(input.value); return rooms;
+      }, []);
+    }
+    async function download(mode) {
+      if (!file) return status('Choose a drawing first.', true);
+      const form = new FormData(); form.append('file', file);
+      form.append('wall_height_m', $('wallHeight').value); form.append('wall_thickness_m', $('wallThickness').value);
+      const scale = num($('confirmedScale').value);
+      if (mode === 'reviewed') {
+        form.append('reviewed_rooms', JSON.stringify(reviewedRooms()));
+        form.append('page_scales', JSON.stringify((previewData.pages || []).map(p => scale || p.px_per_unit)));
+        form.append('qs_name', $('qsName').value);
+        form.append('qs_signed', $('qsSigned').checked ? 'true' : 'false');
+      } else if (scale > 0) {
+        form.append('page_scales', JSON.stringify((previewData.pages || []).map(() => scale)));
+      }
+      status('Generating workbook...'); const response = await fetch(`${api}/generate`, { method: 'POST', body: form });
+      if (!response.ok) return status(await response.text(), true);
+      const blob = await response.blob(), link = document.createElement('a');
+      link.href = URL.createObjectURL(blob); link.download = mode === 'reviewed' ? 'reviewed_boq.xlsx' : 'preliminary_boq.xlsx'; link.click(); URL.revokeObjectURL(link.href);
+      status('Workbook downloaded. Review the Deficiencies and Cover sheets before tender use.');
+    }
+    $('file').onchange = event => { file = event.target.files[0]; };
+    $('preview').onclick = async () => {
+      if (!file) return status('Choose a drawing first.', true);
+      const form = new FormData(); form.append('file', file); status('Detecting...');
+      const response = await fetch(`${api}/preview`, { method: 'POST', body: form });
+      if (!response.ok) return status(await response.text(), true);
+      render(await response.json()); status('Detection complete. Correct uncertain fields before reviewed generation.');
+    };
+    $('automatic').onclick = () => download('automatic');
+    $('reviewed').onclick = () => download('reviewed');
+  </script>
 </body>
 </html>

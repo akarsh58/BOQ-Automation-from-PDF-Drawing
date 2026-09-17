@@ -51,6 +51,10 @@ def write_tender_workbook(
     if enforce_signoff:
         require_tender_gate(doc)
     lines, deficiencies = measure_takeoff(doc, kb)
+    if doc.automatic:
+        deficiencies.insert(0, Deficiency("automatic", "Preliminary automatic extraction; QS review and sign-off are required before tender use."))
+    if doc.automatic and doc.scale_confidence < 0.8:
+        deficiencies.insert(1, Deficiency("scale", "Drawing scale is missing or low-confidence; quantities are estimates until the scale is confirmed."))
     abstract = abstract_from_lines(lines, kb)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -64,6 +68,7 @@ def write_tender_workbook(
     _write_category_summary(wb.create_sheet("Category Summary"), abstract, kb)
     _write_deficiencies(wb.create_sheet("Deficiencies"), deficiencies)
     _write_measurement_notes(wb.create_sheet("Measurement Notes"), lines)
+    _write_detected_geometry(wb.create_sheet("Detected Geometry"), doc)
     wb.save(output_path)
     return output_path
 
@@ -131,7 +136,7 @@ def _write_summary(ws, abstract: list[dict[str, Any]], lines, deficiencies: list
 
 def _write_cover(ws, doc: TakeoffDocument, lines, abstract, deficiencies: list[Deficiency]):
     ws.title = "Cover"
-    ws["A1"] = "TENDER BILL OF QUANTITIES"
+    ws["A1"] = "PRELIMINARY ESTIMATED BOQ" if doc.automatic else "TENDER BILL OF QUANTITIES"
     ws["A1"].font = Font(size=16, bold=True, color="10264A")
     status = "Signed" if doc.qs_signed else "Draft"
     priced_total = sum(row["amount_inr"] or 0 for row in abstract)
@@ -140,10 +145,12 @@ def _write_cover(ws, doc: TakeoffDocument, lines, abstract, deficiencies: list[D
         ("Source file", doc.source_filename or "—"),
         ("Measurement standard", "IS 1200 (building works) mapped to project CPWD-style item codes"),
         ("Scale method", doc.scale_method),
-        ("Units", "metres (IFC)" if doc.units == "m" else "pixels converted with per-page two-point / confirmed scale"),
-        ("IFC units confirmed", "Yes" if doc.ifc_units_confirmed else "No / not applicable"),
+        ("Scale confidence", f"{doc.scale_confidence:.2f}"),
+        ("Generation mode", "Automatic preliminary - QS review required" if doc.automatic else "Reviewed tender takeoff"),
+        ("Units", "metres (IFC)" if doc.units == "m" and doc.ifc_units_confirmed else ("metres (automatic conversion)" if doc.units == "m" else "pixels converted with per-page two-point / confirmed scale")),
+        ("IFC units confirmed", "Yes" if doc.ifc_units_confirmed else "No"),
         ("QS name", doc.qs_name or "—"),
-        ("QS sign-off", status),
+        ("QS sign-off", "Not supplied - preliminary only" if doc.automatic else status),
         ("Generated (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")),
         ("Measurement lines", len(lines)),
         ("Priced total (INR)", round(priced_total, 2)),
@@ -155,7 +162,7 @@ def _write_cover(ws, doc: TakeoffDocument, lines, abstract, deficiencies: list[D
 
     ws.cell(16, 1, "Assumptions and limits").font = Font(bold=True, size=12)
     assumptions = [
-        "Quantities come only from traced or IFC MeasuredElements. Auto-detected rectangles are an assist, not a tender source.",
+        "Automatic quantities are preliminary estimates and must not be treated as QS-approved tender quantities.",
         "Shared walls are measured once for brickwork. Internal plaster uses one or two faces from host spaces / shared flag.",
         "Openings larger than 0.1 sqm are deducted from masonry and plaster (IS 1200). Smaller openings are not deducted.",
         "Wall height and thickness, slab/beam/column sizes, and excavation depth are never invented. Missing values appear on Deficiencies.",
@@ -164,6 +171,9 @@ def _write_cover(ws, doc: TakeoffDocument, lines, abstract, deficiencies: list[D
         "This workbook assists a quantity surveyor. The signed QS remains the tender authority.",
         "MEP (electrical/plumbing points) is not auto-measured and must be entered as provisional/manual items.",
     ]
+    if doc.automatic and doc.scale_confidence < 0.8:
+        assumptions.append("Scale confidence is below the reliable threshold; provide or confirm page scale before tender use.")
+    assumptions.append("Wall height and thickness used by automatic extraction: values supplied to the pipeline and shown in measurement dimensions.")
     assumptions.extend(doc.notes)
     for index, text in enumerate(assumptions, 17):
         ws.cell(index, 1, "•")
@@ -173,12 +183,14 @@ def _write_cover(ws, doc: TakeoffDocument, lines, abstract, deficiencies: list[D
     if doc.calibrations:
         start = 17 + len(assumptions) + 2
         ws.cell(start, 1, "Page scale (px per metre)").font = Font(bold=True)
-        _header_row(ws, ["page", "px_per_m", "method", "calibrated"], start + 1)
+        _header_row(ws, ["page", "px_per_m", "method", "calibrated", "confidence", "assumption"], start + 1)
         for offset, cal in enumerate(doc.calibrations):
             ws.cell(start + 2 + offset, 1, cal.page + 1)
             ws.cell(start + 2 + offset, 2, round(cal.px_per_m, 4))
             ws.cell(start + 2 + offset, 3, cal.method)
             ws.cell(start + 2 + offset, 4, "Yes" if cal.calibrated else "No")
+            ws.cell(start + 2 + offset, 5, cal.confidence)
+            ws.cell(start + 2 + offset, 6, cal.assumption)
     ws.column_dimensions["A"].width = 28
     ws.column_dimensions["B"].width = 88
 
@@ -366,6 +378,32 @@ def _write_measurement_notes(ws, lines: list[MeasurementLine]):
     if not lines:
         ws.cell(2, 1, "No measurement lines available.")
     
+    _autosize(ws)
+
+
+def _write_detected_geometry(ws, doc: TakeoffDocument):
+    _header_row(ws, ["element_id", "type", "page", "name", "detection_confidence", "source", "host_spaces", "assumptions"])
+    row = 2
+    for element in doc.elements:
+        if element.type not in {"space", "wall", "opening"}:
+            continue
+        values = [
+            element.id,
+            element.type,
+            element.page,
+            element.name,
+            element.extra.get("detection_confidence", ""),
+            element.source,
+            ", ".join(element.host_space_ids),
+            "Automatic suggestion; geometry and relationships require QS review." if doc.automatic else "",
+        ]
+        for col, value in enumerate(values, 1):
+            cell = ws.cell(row, col, value)
+            if doc.automatic:
+                cell.fill = PROV_FILL
+        row += 1
+    if row == 2:
+        ws.cell(2, 1, "No detected geometry recorded.")
     _autosize(ws)
 
 

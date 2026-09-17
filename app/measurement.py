@@ -170,6 +170,8 @@ def parse_takeoff(raw: Any, page_count: Optional[int] = None) -> TakeoffDocument
                     px_per_m=px,
                     method=str(data.get("scale_method") or "manual"),
                     calibrated=flag,
+                    confidence=max(0.0, min(1.0, float(data.get("scale_confidence", 0.0) or 0.0))),
+                    assumption=str(data.get("scale_assumption") or ""),
                 )
             )
         if page_count is not None and len(calibrations) != page_count:
@@ -240,6 +242,7 @@ def parse_takeoff(raw: Any, page_count: Optional[int] = None) -> TakeoffDocument
             ifc_type=str(item["ifc_type"]) if item.get("ifc_type") else None,
             ifc_guid=str(item["ifc_guid"]) if item.get("ifc_guid") else None,
             qto={k: v for k, v in (item.get("qto") or {}).items() if _finite_number(v) is not None},
+            extra=dict(item.get("extra") or {}),
         )
         if el_type in {"space", "slab", "footing", "excavation", "column"}:
             element.polygon_m = points_m or None
@@ -259,6 +262,9 @@ def parse_takeoff(raw: Any, page_count: Optional[int] = None) -> TakeoffDocument
         qs_signed=bool(data.get("qs_signed")),
         units=units,
         scale_method=str(data.get("scale_method") or ("ifc_units" if units == "m" else "detected")),
+        scale_confidence=max(0.0, min(1.0, float(data.get("scale_confidence", 0.0) or 0.0))),
+        automatic=_as_bool(data.get("automatic")),
+        preliminary=_as_bool(data.get("preliminary")),
         ifc_units_confirmed=bool(data.get("ifc_units_confirmed")),
         calibrations=calibrations,
         elements=elements,
@@ -345,6 +351,9 @@ def _deduct_openings(wall: MeasuredElement, openings: list[MeasuredElement]) -> 
     for opening in openings:
         if opening.host_id != wall.id:
             continue
+        if not opening.centerline_m:
+            notes.append(f"{opening.id} position unknown; not deducted")
+            continue
         if wall.centerline_m and opening.centerline_m:
             distance = _point_to_polyline_distance(opening.centerline_m[0], wall.centerline_m)
             tolerance = max(thickness, 0.15)
@@ -353,6 +362,9 @@ def _deduct_openings(wall: MeasuredElement, openings: list[MeasuredElement]) -> 
                     f"{opening.id} is {distance:.3f} m from host wall (>{tolerance:.3f} m); not deducted"
                 )
                 continue
+        elif not wall.centerline_m:
+            notes.append(f"{opening.id} host wall position unknown; not deducted")
+            continue
         area = _opening_area(opening)
         if area is None:
             notes.append(f"opening {opening.id} missing width/height")
@@ -390,6 +402,8 @@ def _same_wall(first: MeasuredElement, second: MeasuredElement, tolerance: float
     thickness1 = first.thickness_m or 0.0
     thickness2 = second.thickness_m or 0.0
     if abs(thickness1 - thickness2) > 0.01:
+        return False
+    if first.page != second.page:
         return False
     return (
         _point_distance(a1, a2) <= tolerance and _point_distance(b1, b2) <= tolerance
@@ -432,6 +446,7 @@ def measure_takeoff(doc: TakeoffDocument, kb: pd.DataFrame) -> tuple[list[Measur
         override_code: Optional[float] = None,
         gross_quantity: Optional[float] = None,
         wastage_percent: Optional[float] = None,
+        provisional_override: bool = False,
     ) -> None:
         nonlocal seq
         code = override_code if override_code is not None else DEFAULT_ITEM_CODES.get(code_key)
@@ -459,7 +474,7 @@ def measure_takeoff(doc: TakeoffDocument, kb: pd.DataFrame) -> tuple[list[Measur
                 ),
                 wastage_percent=wastage_percent,
                 is1200_note=note,
-                provisional=provisional,
+                provisional=provisional or provisional_override or doc.automatic,
                 source=element.source,
                 location=element.name or element.id,
             )
@@ -497,6 +512,8 @@ def measure_takeoff(doc: TakeoffDocument, kb: pd.DataFrame) -> tuple[list[Measur
             seen_walls.append(wall)
 
     for space in spaces:
+        if doc.automatic and float(space.extra.get("detection_confidence", 0.0) or 0.0) < 0.5:
+            deficiencies.append(Deficiency(space.id, "Room detection confidence is low; verify position, name, and dimensions."))
         area = space.qto.get("GrossFloorArea") or space.qto.get("NetFloorArea")
         if not _finite_positive(area) and space.polygon_m:
             area = polygon_area(space.polygon_m)
@@ -562,7 +579,7 @@ def measure_takeoff(doc: TakeoffDocument, kb: pd.DataFrame) -> tuple[list[Measur
         # external finishes from the presence of a single host space.
         hosts = [sid for sid in wall.host_space_ids if sid in by_id]
         internal_faces = 2 if wall.shared else len(hosts)
-        external_faces = 0
+        external_faces = 1 if _as_bool(wall.extra.get("external")) else 0
         # IS 1200 plaster measured in sqm with thickness specification
         add_line(
             wall,
@@ -611,6 +628,15 @@ def measure_takeoff(doc: TakeoffDocument, kb: pd.DataFrame) -> tuple[list[Measur
     for opening in openings:
         area = _opening_area(opening)
         kind = opening.opening_kind or "door"
+        host = by_id.get(opening.host_id or "")
+        position_known = bool(opening.centerline_m)
+        if host is None or host.type != "wall":
+            deficiencies.append(Deficiency(opening.id, "Opening host wall is missing or invalid; no masonry/plaster deduction."))
+        if not position_known:
+            deficiencies.append(Deficiency(opening.id, "Opening position is missing; no masonry/plaster deduction."))
+        if not _finite_positive(opening.width_m) or not _finite_positive(opening.height_m):
+            deficiencies.append(Deficiency(opening.id, "Opening width and height are required; no fabricated quantity or deduction."))
+            continue
         if kind == "door":
             add_line(
                 opening,
@@ -621,6 +647,7 @@ def measure_takeoff(doc: TakeoffDocument, kb: pd.DataFrame) -> tuple[list[Measur
                 length=opening.width_m,
                 breadth=opening.height_m,
                 override_code=opening.item_code or DEFAULT_ITEM_CODES["door"],
+                provisional_override=host is None or not position_known,
             )
         else:
             if not _finite_positive(area):
@@ -635,11 +662,8 @@ def measure_takeoff(doc: TakeoffDocument, kb: pd.DataFrame) -> tuple[list[Measur
                 length=opening.width_m,
                 breadth=opening.height_m,
                 override_code=opening.item_code or DEFAULT_ITEM_CODES["window"],
+                provisional_override=host is None or not position_known,
             )
-        if opening.host_id and opening.host_id not in by_id:
-            deficiencies.append(Deficiency(opening.id, f"Host wall {opening.host_id} was not found."))
-        if not opening.host_id:
-            deficiencies.append(Deficiency(opening.id, "Opening has no host wall; masonry deductions were skipped."))
 
     footing_volume = 0.0
     for footing in footings:

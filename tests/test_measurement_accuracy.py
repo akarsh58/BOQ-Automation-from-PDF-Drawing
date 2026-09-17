@@ -183,6 +183,62 @@ class MeasurementAccuracyTests(unittest.TestCase):
         self.assertFalse(any(line.item_code == 4.2 for line in lines))
         self.assertFalse(any(line.item_code == 6.2 for line in lines))
 
+    def test_identical_walls_on_different_pages_are_not_deduplicated(self):
+        walls = [
+            MeasuredElement(
+                id=f"w{page}",
+                type="wall",
+                page=page,
+                centerline_m=[(0, 0), (3, 0)],
+                height_m=3,
+                thickness_m=0.23,
+            )
+            for page in (0, 1)
+        ]
+        lines, deficiencies = measure_takeoff(TakeoffDocument(elements=walls, units="m"), rate_file())
+        self.assertEqual(2, len([line for line in lines if line.item_code == 3.1]))
+        self.assertFalse(any("Duplicate" in item.message for item in deficiencies))
+
+    def test_unhosted_opening_is_provisional_and_not_deducted(self):
+        wall = MeasuredElement(
+            id="w1",
+            type="wall",
+            centerline_m=[(0, 0), (4, 0)],
+            height_m=3,
+            thickness_m=0.2,
+        )
+        opening = MeasuredElement(
+            id="o1",
+            type="opening",
+            opening_kind="window",
+            width_m=1,
+            height_m=1,
+            centerline_m=[(2, 0)],
+        )
+        lines, deficiencies = measure_takeoff(
+            TakeoffDocument(elements=[wall, opening], units="m"), rate_file()
+        )
+        brickwork = next(line for line in lines if line.item_code == 3.1)
+        window = next(line for line in lines if line.item_code == 7.2)
+        self.assertEqual(brickwork.gross_quantity, 2.4)
+        self.assertTrue(window.provisional)
+        self.assertTrue(any("host wall" in item.message for item in deficiencies))
+
+    def test_missing_opening_dimensions_create_deficiency(self):
+        wall = MeasuredElement(
+            id="w1",
+            type="wall",
+            centerline_m=[(0, 0), (4, 0)],
+            height_m=3,
+            thickness_m=0.2,
+        )
+        opening = MeasuredElement(id="o1", type="opening", host_id="w1", centerline_m=[(2, 0)])
+        lines, deficiencies = measure_takeoff(
+            TakeoffDocument(elements=[wall, opening], units="m"), rate_file()
+        )
+        self.assertFalse(any(line.element_id == "o1" for line in lines))
+        self.assertTrue(any("width and height" in item.message for item in deficiencies))
+
 
 if __name__ == "__main__":
     unittest.main()
