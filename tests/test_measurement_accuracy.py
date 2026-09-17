@@ -73,5 +73,116 @@ class MeasurementAccuracyTests(unittest.TestCase):
         self.assertEqual(doc.qa_status, "approved")
 
 
+    def test_small_opening_is_deducted(self):
+        """Small openings above 0.1 sqm should be deducted (IS 1200)."""
+        wall = MeasuredElement(
+            id="w1",
+            type="wall",
+            centerline_m=[(0, 0), (4, 0)],
+            height_m=3,
+            thickness_m=0.2,
+        )
+        opening = MeasuredElement(
+            id="o-small",
+            type="opening",
+            opening_kind="window",
+            host_id="w1",
+            width_m=0.6,
+            height_m=0.2,
+            centerline_m=[(2, 0)],
+        )
+        lines, _ = measure_takeoff(
+            TakeoffDocument(elements=[wall, opening], units="m"), rate_file()
+        )
+        brickwork = next(line for line in lines if line.item_code == 3.1)
+        # 0.6 x 0.2 = 0.12 sqm > 0.1 sqm threshold → must be deducted
+        self.assertAlmostEqual(2.376, brickwork.gross_quantity)
+
+    def test_sub_01_opening_is_not_deducted(self):
+        """Openings at or below 0.1 sqm remain non-deductible."""
+        wall = MeasuredElement(
+            id="w-small-open",
+            type="wall",
+            centerline_m=[(0, 0), (3, 0)],
+            height_m=3,
+            thickness_m=0.23,
+        )
+        opening = MeasuredElement(
+            id="o-small-open",
+            type="opening",
+            opening_kind="door",
+            width_m=0.30,
+            height_m=0.30,
+            host_id="w-small-open",
+        )
+        lines, _ = measure_takeoff(
+            TakeoffDocument(elements=[wall, opening], units="m"), rate_file()
+        )
+        brickwork = next(line for line in lines if line.item_code == 3.1)
+        # 0.30 x 0.30 = 0.09 sqm <= 0.1 sqm threshold → not deducted; gross = 3*3*0.23 = 2.07
+        self.assertAlmostEqual(2.07, brickwork.gross_quantity)
+        self.assertIn("not deducted", brickwork.is1200_note)
+
+    def test_shared_wall_deduplication(self):
+        """Duplicate shared walls are measured once with 2 plaster faces."""
+        wall1 = MeasuredElement(
+            id="w-shared",
+            type="wall",
+            centerline_m=[(0, 0), (3, 0)],
+            height_m=3,
+            thickness_m=0.23,
+        )
+        wall2 = MeasuredElement(
+            id="w-dup",
+            type="wall",
+            centerline_m=[(0, 0), (3, 0)],
+            height_m=3,
+            thickness_m=0.23,
+        )
+        lines, _ = measure_takeoff(
+            TakeoffDocument(elements=[wall1, wall2], units="m"), rate_file()
+        )
+        self.assertEqual(1, len([line for line in lines if line.item_code == 3.1]))
+        self.assertEqual(1, len([line for line in lines if line.item_code == 4.1]))
+        self.assertAlmostEqual(3 * 3 * 2, next(line.quantity for line in lines if line.item_code == 4.1))
+
+    def test_shared_wall_with_tracing_tolerance(self):
+        """Walls with slightly different traced endpoints deduplicate."""
+        wall1 = MeasuredElement(
+            id="w-shared-1",
+            type="wall",
+            centerline_m=[(0, 0), (3, 0)],
+            height_m=3,
+            thickness_m=0.23,
+        )
+        wall2 = MeasuredElement(
+            id="w-shared-2",
+            type="wall",
+            centerline_m=[(0.01, 0.01), (3.01, 0.01)],
+            height_m=3,
+            thickness_m=0.23,
+        )
+        lines, _ = measure_takeoff(
+            TakeoffDocument(elements=[wall1, wall2], units="m"), rate_file()
+        )
+        self.assertEqual(1, len([line for line in lines if line.item_code == 3.1]))
+
+    def test_internal_wall_has_no_external_finishes(self):
+        """Internal walls do not receive external plaster/paint charges."""
+        wall = MeasuredElement(
+            id="w-internal",
+            type="wall",
+            centerline_m=[(0, 0), (3, 0)],
+            height_m=3,
+            thickness_m=0.23,
+            host_space_ids=["s1"],
+        )
+        lines, _ = measure_takeoff(
+            TakeoffDocument(elements=[wall], units="m"), rate_file()
+        )
+        self.assertFalse(any(line.item_code == 4.2 for line in lines))
+        self.assertFalse(any(line.item_code == 6.2 for line in lines))
+
+
 if __name__ == "__main__":
     unittest.main()

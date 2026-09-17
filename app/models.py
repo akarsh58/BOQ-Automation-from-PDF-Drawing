@@ -30,7 +30,6 @@ IS1200_PLASTER_THICKNESS_INTERNAL = 0.012  # 12mm
 IS1200_PLASTER_THICKNESS_EXTERNAL = 0.020  # 20mm
 IS1200_CONCRETE_WASTAGE_PERCENT = 3.0  # standard wastage allowance
 IS1200_BRICKWORK_WASTAGE_PERCENT = 5.0  # standard wastage allowance
-IS1200_DEDUCTION_THRESHOLD_AREA = 2.0  # sqm - small openings not deducted
 IS1200_DEDUCTION_THRESHOLD_LENGTH = 1.0  # m - small openings not deducted
 
 DEFAULT_ITEM_CODES = {

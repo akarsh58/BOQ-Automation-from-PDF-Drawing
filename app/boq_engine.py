@@ -57,7 +57,12 @@ def rooms_to_line_items(rooms, kb, wall_height_m=3.0, wall_thickness_m=0.23):
         raise ValueError("wall_thickness_m must be positive")
 
     def kb_row(code):
-        rows = kb[kb["item_code"] == code]
+        # Float keys from CSVs can differ by a few ULPs (e.g. 5.1 vs 5.10).
+        # Match with a small rounding tolerance before falling back to
+        # the exact lookup.
+        rows = kb[pd.to_numeric(kb["item_code"], errors="coerce").round(4) == round(float(code), 4)]
+        if rows.empty:
+            rows = kb[kb["item_code"] == code]
         if rows.empty:
             raise ValueError(f"Knowledge base item {code} is missing")
         row = rows.iloc[0]
