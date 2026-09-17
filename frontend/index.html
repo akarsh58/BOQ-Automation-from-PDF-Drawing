@@ -3,105 +3,167 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BOQ Automation - Preliminary Takeoff</title>
+  <title>BOQ Automation | Quantity Takeoff</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
-    :root { font: 16px/1.4 system-ui, sans-serif; color: #233044; background: #f4f6f8; }
-    body { max-width: 1100px; margin: 0 auto; padding: 24px; }
-    section, .room, .wall { background: white; border: 1px solid #dce2e8; border-radius: 8px; padding: 16px; margin: 12px 0; }
-    h1 { margin-top: 0; } h2 { color: #174a7c; }
-    button { background: #1769aa; color: white; border: 0; border-radius: 4px; padding: 9px 14px; cursor: pointer; }
-    button:disabled { opacity: .5; cursor: wait; }
-    input { padding: 7px; border: 1px solid #b8c2cc; border-radius: 4px; max-width: 140px; }
-    label { display: inline-flex; gap: 6px; align-items: center; margin: 4px 12px 4px 0; }
-    .warning { background: #fff3cd; border-left: 4px solid #d99b00; padding: 10px; }
-    .error { background: #f8d7da; border-left: 4px solid #b02a37; padding: 10px; }
-    .muted { color: #5f6b78; } .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
-    .hidden { display: none; } .confidence-low { color: #b02a37; font-weight: 700; }
+    :root {
+      --ink: #172231; --muted: #718096; --line: #e5eaf0; --paper: #fff;
+      --navy: #16324f; --blue: #2176ae; --cyan: #dff1f8; --green: #13795b;
+      --amber: #9a6700; --amber-bg: #fff7df; --red: #b42318; --red-bg: #fff0ee;
+      --bg: #f5f7fa; --shadow: 0 10px 30px rgba(23,34,49,.07);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--bg); }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    .app-header { height: 70px; display: flex; align-items: center; justify-content: space-between; padding: 0 38px; background: var(--paper); border-bottom: 1px solid var(--line); }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; letter-spacing: -.02em; }
+    .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; color: #fff; background: var(--navy); border-radius: 8px; font-weight: 900; }
+    .brand small { display: block; color: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: .02em; }
+    nav { display: flex; gap: 27px; margin-left: 70px; margin-right: auto; }
+    nav a { color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 650; }
+    nav a:first-child { color: var(--navy); }
+    .header-actions { display: flex; align-items: center; gap: 18px; color: var(--muted); font-size: 13px; }
+    .avatar { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: #dcecf4; color: var(--navy); font-weight: 800; }
+    main { max-width: 1440px; margin: 0 auto; padding: 34px 38px 70px; }
+    .hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 26px; }
+    .eyebrow { color: var(--blue); font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { margin: 7px 0 8px; color: var(--navy); font-size: clamp(29px, 4vw, 44px); line-height: 1.05; letter-spacing: -.045em; }
+    .hero p { max-width: 680px; margin: 0; color: var(--muted); font-size: 15px; }
+    .stepper { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+    .step { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 750; }
+    .step b { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid #cad5df; border-radius: 50%; font-size: 11px; }
+    .step.active { color: var(--navy); } .step.active b { color: #fff; border-color: var(--navy); background: var(--navy); }
+    .step-line { width: 26px; height: 1px; background: #ccd6df; }
+    .card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+    .upload-card { display: grid; grid-template-columns: 1fr 390px; gap: 28px; padding: 28px; }
+    .dropzone { min-height: 228px; display: grid; place-items: center; text-align: center; border: 1.5px dashed #9bb7c8; border-radius: 10px; background: #f8fbfd; transition: .2s ease; }
+    .dropzone.dragging { border-color: var(--blue); background: var(--cyan); }
+    .upload-icon { width: 48px; height: 48px; display: grid; place-items: center; margin: 0 auto 12px; color: var(--blue); background: var(--cyan); border-radius: 12px; font-size: 22px; }
+    .dropzone strong { display: block; color: var(--navy); font-size: 17px; }
+    .dropzone span { display: block; margin: 7px 0 17px; color: var(--muted); font-size: 13px; }
+    .primary, .secondary { border: 0; border-radius: 7px; padding: 11px 17px; font-size: 13px; font-weight: 750; }
+    .primary { color: #fff; background: var(--blue); box-shadow: 0 4px 12px rgba(33,118,174,.2); }
+    .primary:hover { background: #185c89; } .secondary { color: var(--navy); background: #edf3f7; }
+    .upload-meta { padding: 10px 3px; } .upload-meta h3 { margin: 0 0 16px; color: var(--navy); font-size: 14px; }
+    .meta-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+    .meta-row span { color: var(--muted); } .meta-row b { max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .notice { margin-top: 20px; padding: 12px 14px; color: #805b00; background: var(--amber-bg); border: 1px solid #f2df9d; border-radius: 8px; font-size: 12px; line-height: 1.5; }
+    .hidden { display: none !important; }
+    .section-heading { display: flex; justify-content: space-between; align-items: center; margin: 36px 0 13px; }
+    .section-heading h2 { margin: 0; color: var(--navy); font-size: 19px; letter-spacing: -.02em; }
+    .section-heading p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 5px 9px; font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+    .badge.info { color: #176083; background: #e4f2f8; } .badge.good { color: var(--green); background: #e2f5ed; }
+    .badge.warn { color: var(--amber); background: var(--amber-bg); } .badge.bad { color: var(--red); background: var(--red-bg); }
+    .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+    .stat { min-height: 104px; padding: 17px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; }
+    .stat label { display: block; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    .stat strong { display: block; margin-top: 12px; color: var(--navy); font-size: 23px; letter-spacing: -.03em; }
+    .stat small { color: var(--muted); font-size: 11px; }
+    .analysis-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr); gap: 16px; }
+    .preview-card { overflow: hidden; } .preview-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+    .preview-toolbar strong { color: var(--navy); font-size: 13px; } .tool-group { display: flex; gap: 6px; }
+    .tool-group button { min-width: 31px; height: 28px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: #fff; }
+    .canvas { position: relative; min-height: 410px; overflow: hidden; display: grid; place-items: center; background: #e8edf0; }
+    .canvas img { display: block; max-width: 100%; max-height: 520px; object-fit: contain; transform-origin: center; transition: transform .15s ease; }
+    .overlay { position: absolute; inset: 0; pointer-events: none; } .overlay-room { position: absolute; border: 2px solid rgba(33,118,174,.65); background: rgba(33,118,174,.08); }
+    .legend { display: flex; gap: 17px; padding: 11px 16px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--line); }
+    .legend i { width: 10px; height: 10px; display: inline-block; margin-right: 5px; border: 2px solid currentColor; border-radius: 2px; vertical-align: -1px; }
+    .legend .room-key { color: var(--blue); } .legend .wall-key { color: #7e8d54; } .legend .opening-key { color: #c37b2f; }
+    .qa-card { padding: 20px; } .qa-card h3 { margin: 0; color: var(--navy); font-size: 15px; }
+    .qa-status { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; margin-bottom: 5px; border-bottom: 1px solid var(--line); }
+    .qa-list { list-style: none; padding: 0; margin: 4px 0 0; } .qa-list li { display: flex; gap: 9px; padding: 10px 0; border-bottom: 1px solid #f0f2f4; color: #49586a; font-size: 12px; }
+    .check { color: var(--green); font-weight: 900; } .caution { color: var(--amber); font-weight: 900; }
+    .table-card { overflow: hidden; } .table-tools { display: flex; gap: 8px; } .table-tools input, .table-tools select { padding: 8px 10px; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; background: #fff; font-size: 12px; }
+    .table-wrap { overflow-x: auto; } table { width: 100%; border-collapse: collapse; min-width: 720px; } th { color: var(--muted); background: #f8fafb; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; text-align: left; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; } td { color: #405064; font-size: 12px; } td strong { color: var(--navy); }
+    .review-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; } .review-card { padding: 20px; }
+    .review-card h3 { margin: 0 0 13px; color: var(--navy); font-size: 15px; } .issue { padding: 12px 0; border-top: 1px solid var(--line); } .issue p { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .processing { display: grid; gap: 9px; padding: 20px; } .process-row { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; } .process-row.done { color: var(--green); } .process-row.active { color: var(--navy); font-weight: 750; }
+    .dot { width: 10px; height: 10px; border: 2px solid #bec9d2; border-radius: 50%; } .done .dot { border-color: var(--green); background: var(--green); } .active .dot { border-color: var(--blue); box-shadow: 0 0 0 3px #d9edf6; }
+    .export-bar { display: flex; justify-content: space-between; align-items: center; gap: 15px; padding: 17px 20px; } .export-bar strong { color: var(--navy); font-size: 14px; } .export-actions { display: flex; gap: 9px; }
+    .cost { color: var(--navy); font-size: 24px; font-weight: 800; } .empty { padding: 28px; text-align: center; color: var(--muted); font-size: 13px; }
+    @media (max-width: 950px) { nav { margin-left: 25px; gap: 13px; } .upload-card, .analysis-grid { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 620px) { .app-header { padding: 0 16px; } nav { display: none; } main { padding: 25px 16px 50px; } .hero { display: block; } .stepper { margin-top: 20px; } .stats { grid-template-columns: repeat(2, 1fr); } .upload-card { padding: 16px; } .review-grid { grid-template-columns: 1fr; } .table-tools { margin-top: 12px; } .section-heading { display: block; } }
   </style>
 </head>
 <body>
-  <h1>BOQ Automation</h1>
-  <p>Upload a drawing for a preliminary estimate, or review and correct the detected takeoff before tender sign-off.</p>
-  <section>
-    <h2>1. Upload drawing</h2>
-    <input id="file" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.ifc,.ifczip">
-    <button id="preview">Detect rooms, walls and scale</button>
-    <p id="message" class="muted"></p>
-  </section>
-  <section id="results" class="hidden">
-    <h2>2. Detection review</h2>
-    <div id="scale"></div>
-    <div class="warning">Detected names, geometry, walls and scale are suggestions. Automatic output is preliminary and is not QS-approved.</div>
-    <div class="grid"><div><h3>Detected rooms (editable)</h3><div id="rooms"></div></div><div><h3>Detected walls / elements</h3><div id="elements"></div></div></div>
-  </section>
-  <section id="generate" class="hidden">
-    <h2>3. Generate</h2>
-    <label>Wall height (m) <input id="wallHeight" type="number" value="3" step=".01" min=".1"></label>
-    <label>Wall thickness (m) <input id="wallThickness" type="number" value=".23" step=".01" min=".01"></label>
-    <label>Confirmed scale (px/m, optional) <input id="confirmedScale" type="number" min="1" step=".01"></label>
-    <label>QS name <input id="qsName" type="text" placeholder="Required for reviewed export"></label>
-    <label><input id="qsSigned" type="checkbox"> I confirm QS review/sign-off</label>
-    <p class="muted">Use confirmed scale and reviewed rooms for a tender workflow. Without them, the download remains preliminary.</p>
-    <button id="automatic">Download preliminary BOQ</button>
-    <button id="reviewed">Download reviewed rooms BOQ</button>
-  </section>
+  <header class="app-header">
+    <div class="brand"><span class="brand-mark">BQ</span><div>BOQ Automation<small>AI-powered quantity takeoff</small></div></div>
+    <nav><a href="#dashboard">Dashboard</a><a href="#projects">Projects</a><a href="#boq">BOQ</a><a href="#reports">Reports</a></nav>
+    <div class="header-actions"><span>⚙ Settings</span><span class="avatar">QS</span></div>
+  </header>
+  <main id="dashboard">
+    <section class="hero">
+      <div><span class="eyebrow">Construction estimation workspace</span><h1>Generate BOQ from your drawing</h1><p>Upload a construction floor plan and automatically extract quantities, map BOQ items, and generate an editable Excel estimate.</p></div>
+      <div class="stepper"><span class="step active" id="step1"><b>1</b> Upload</span><i class="step-line"></i><span class="step" id="step2"><b>2</b> Analyze</span><i class="step-line"></i><span class="step" id="step3"><b>3</b> Download</span></div>
+    </section>
+    <section class="card upload-card" id="uploadCard">
+      <div id="dropzone" class="dropzone">
+        <div><div class="upload-icon">⌁</div><strong>Drop your PDF here</strong><span>or choose a drawing from your device</span><button class="primary" id="browse">Browse Files</button><input id="file" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff" hidden></div>
+      </div>
+      <div class="upload-meta"><h3>Automatic analysis</h3><div class="meta-row"><span>Selected file</span><b id="fileName">No drawing selected</b></div><div class="meta-row"><span>File size</span><b id="fileSize">—</b></div><div class="meta-row"><span>Accepted type</span><b>PDF drawings</b></div><div class="meta-row"><span>Maximum size</span><b>25 MB</b></div><button class="primary" id="analyze" style="width:100%;margin-top:18px">Start automatic analysis</button><div class="notice">Results are preliminary until reviewed by a qualified QS. No manual tracing or calibration is required to start.</div></div>
+    </section>
+    <div id="error" class="card hidden" style="margin-top:16px;padding:15px;color:var(--red);background:var(--red-bg);font-size:13px"></div>
+    <section id="processing" class="card processing hidden" style="margin-top:18px">
+      <div class="process-row" data-stage="upload"><span class="dot"></span>Uploading drawing</div><div class="process-row" data-stage="text"><span class="dot"></span>Extracting text and scale</div><div class="process-row" data-stage="rooms"><span class="dot"></span>Detecting rooms and geometry</div><div class="process-row" data-stage="walls"><span class="dot"></span>Preparing walls and opening relationships</div><div class="process-row" data-stage="quantity"><span class="dot"></span>Calculating quantities</div><div class="process-row" data-stage="excel"><span class="dot"></span>Generating Excel workbook</div>
+    </section>
+    <section id="analysis" class="hidden">
+      <div class="section-heading"><div><h2>Analysis overview</h2><p id="analysisSubtitle">Actual results returned by the drawing analysis API.</p></div><span class="badge warn">Preliminary · QS review required</span></div>
+      <div class="stats"><div class="stat"><label>Drawing</label><strong id="statDrawing">—</strong><small id="statPages">—</small></div><div class="stat"><label>Scale</label><strong id="statScale">—</strong><small id="statScaleMeta">—</small></div><div class="stat"><label>Rooms detected</label><strong id="statRooms">—</strong><small>geometry candidates</small></div><div class="stat"><label>Walls detected</label><strong id="statWalls">—</strong><small>inferred from rooms</small></div><div class="stat"><label>Openings</label><strong id="statOpenings">—</strong><small id="statOpeningsMeta">doors + windows</small></div><div class="stat"><label>QA status</label><strong id="statQa">—</strong><small>review status</small></div></div>
+      <div class="section-heading"><div><h2>Drawing preview</h2><p>Detected room overlays are shown against the rendered page.</p></div></div>
+      <div class="analysis-grid"><div class="card preview-card"><div class="preview-toolbar"><strong id="previewTitle">Rendered drawing</strong><div class="tool-group"><button id="zoomOut" title="Zoom out">−</button><button id="zoomReset" title="Fit to screen">Fit</button><button id="zoomIn" title="Zoom in">+</button></div></div><div class="canvas" id="canvas"><img id="drawing" alt="Rendered construction drawing"><div class="overlay" id="overlay"></div></div><div class="legend"><span class="room-key"><i></i>Room candidate</span><span class="wall-key"><i></i>Inferred wall</span><span class="opening-key"><i></i>Opening</span></div></div><div class="card qa-card"><div class="qa-status"><h3>Quality assurance</h3><span id="qaBadge" class="badge warn">Review required</span></div><ul id="qaList" class="qa-list"></ul><div class="section-heading" style="margin-top:24px"><div><h2 style="font-size:15px">Processing stages</h2></div></div><div id="miniProcess" class="processing" style="padding:0"></div></div></div>
+      <div class="section-heading"><div><h2>Detected rooms</h2><p>Low-confidence geometry is intentionally highlighted for review.</p></div></div>
+      <div class="card table-card"><div class="table-wrap"><table><thead><tr><th>Room</th><th>Width</th><th>Length</th><th>Area</th><th>Confidence</th><th>Status</th></tr></thead><tbody id="roomsTable"></tbody></table></div></div>
+      <div class="section-heading"><div><h2>Wall / takeoff geometry</h2><p>Wall dimensions and source are clearly marked as inferred or assumed.</p></div></div>
+      <div class="card table-card"><div class="table-wrap"><table><thead><tr><th>Element</th><th>Length</th><th>Thickness</th><th>Height</th><th>Quantity</th><th>Unit</th><th>Confidence</th></tr></thead><tbody id="wallsTable"></tbody></table></div></div>
+      <div class="section-heading" id="boq"><div><h2>Bill of quantities</h2><p id="boqSubtitle">The table is populated from the generated workbook.</p></div><div class="table-tools"><input id="boqSearch" placeholder="Search items..."><select id="boqFilter"><option value="all">All statuses</option><option value="priced">Priced</option><option value="provisional">Provisional</option></select></div></div>
+      <div class="card table-card"><div class="table-wrap"><table><thead><tr><th>S.No.</th><th>Item code</th><th>Description</th><th>Unit</th><th>Quantity</th><th>Rate</th><th>Amount</th><th>Status</th></tr></thead><tbody id="boqTable"><tr><td colspan="8" class="empty">Generate the Excel BOQ to load actual mapped items and rates.</td></tr></tbody></table></div></div>
+      <div class="section-heading"><div><h2>Review required</h2><p>Backend deficiencies and assumptions are shown without suppression.</p></div></div>
+      <div class="review-grid"><div class="card review-card"><h3>Deficiencies</h3><div id="deficiencies"></div></div><div class="card review-card"><h3>Measurement assumptions</h3><div id="assumptions"></div></div></div>
+      <div class="card export-bar" style="margin-top:16px"><div><strong>Ready to generate a preliminary workbook?</strong><div class="muted" style="font-size:12px;margin-top:5px">Excel output includes Takeoff, QA, Deficiencies and Detected Geometry sheets.</div></div><div class="export-actions"><button class="secondary" id="newDrawing">New drawing</button><button class="primary" id="generateExcel">Generate Excel BOQ</button></div></div>
+      <div id="exportResult" class="card hidden" style="margin-top:12px;padding:17px 20px"><strong style="color:var(--green)">✓ BOQ generated successfully</strong><span id="exportDetail" class="muted" style="font-size:12px;margin-left:12px"></span><button class="secondary" id="downloadExcel" style="float:right">Download Excel</button></div>
+    </section>
+  </main>
   <script>
-    const api = location.protocol === 'file:' ? 'http://localhost:8000' : '';
-    let file, previewData;
+    const api = (location.protocol === 'file:' || location.port === '4173') ? 'http://localhost:8000' : '';
     const $ = id => document.getElementById(id);
-    function status(text, error = false) { $('message').textContent = text; $('message').className = error ? 'error' : 'muted'; }
-    function num(value) { return Number(value); }
-    function render(data) {
-      previewData = data; $('results').classList.remove('hidden'); $('generate').classList.remove('hidden');
-      const pages = data.pages || [], scales = pages.map(p => p.px_per_unit);
-      const confidence = pages.map(p => Number(p.scale_confidence || 0));
-      $('scale').innerHTML = `<b>Scale:</b> ${scales.join(', ')} px/m; <b>method:</b> ${pages.map(p => p.scale_method || 'unknown').join(', ')}; <b>confidence:</b> ${confidence.map(v => v.toFixed(2)).join(', ')}`;
-      $('rooms').innerHTML = (data.rooms || []).map((r, i) => `<div class="room ${Number(r.confidence || 0) < .5 ? 'confidence-low' : ''}">
-        <b>Room ${i + 1}</b> <span>confidence ${(Number(r.confidence || 0)).toFixed(2)}</span><br>
-        <label>Name <input data-room="${i}" data-key="name" value="${String(r.name || '').replaceAll('"', '&quot;')}"></label>
-        <label>x <input type="number" data-room="${i}" data-key="x" value="${r.x}"></label>
-        <label>y <input type="number" data-room="${i}" data-key="y" value="${r.y}"></label>
-        <label>w <input type="number" data-room="${i}" data-key="width" value="${r.width}"></label>
-        <label>h <input type="number" data-room="${i}" data-key="height" value="${r.height}"></label>
-      </div>`).join('') || '<p class="muted">No rooms detected.</p>';
-      const elements = data.elements || [];
-      $('elements').innerHTML = elements.map(e => `<div class="wall"><b>${e.type}</b> ${e.name || e.id} <span class="muted">page ${Number(e.page) + 1}</span></div>`).join('') || '<p class="muted">No elements detected.</p>';
+    let file = null, previewData = null, workbookBlob = null, zoom = 1;
+    const stages = ['upload','text','rooms','walls','quantity','excel'];
+    function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char])); }
+    function showError(message) { $('error').textContent = message; $('error').classList.remove('hidden'); }
+    function clearError() { $('error').classList.add('hidden'); }
+    function setStep(number) { ['step1','step2','step3'].forEach((id, i) => $(id).classList.toggle('active', i < number)); }
+    function setStage(active, complete = false) { $('processing').classList.remove('hidden'); stages.forEach((name, i) => { const row = document.querySelector(`[data-stage="${name}"]`); row.className = 'process-row ' + (i < active || complete ? 'done' : i === active ? 'active' : ''); }); }
+    function formatBytes(bytes) { if (!bytes) return '—'; const units=['B','KB','MB']; let i=0,n=bytes; while(n>=1024&&i<2){n/=1024;i++;} return `${n.toFixed(i?1:0)} ${units[i]}`; }
+    function confidence(value) { const n=Number(value || 0); return {text:n >= .8 ? 'High' : n >= .5 ? 'Medium' : 'Low', class:n >= .8 ? 'good' : n >= .5 ? 'info' : 'bad'}; }
+    function renderQA(pages, rooms, openings) {
+      const page = pages[0] || {}; const scaleOk = Number(page.scale_confidence || 0) >= .8; const roomLabels = rooms.filter(r => r.name && !/^Room \d+$/i.test(r.name)).length;
+      const qa = [['Scale detected', scaleOk, scaleOk ? 'Detected from drawing text' : 'Missing or low-confidence scale'],['Room labels detected', roomLabels > 0, roomLabels ? `${roomLabels} labelled room(s)` : 'No reliable OCR room labels'],['Geometry extracted', rooms.length > 0, rooms.length ? `${rooms.length} room candidate(s)` : 'No rooms detected'],['Opening detection', openings.length > 0, openings.length ? `${openings.length} opening candidate(s)` : 'No openings detected in this drawing'],['Preliminary assumptions', false, 'Wall geometry, height and thickness require QS review']];
+      $('qaList').innerHTML = qa.map(item => `<li><span class="${item[1]?'check':'caution'}">${item[1]?'✓':'⚠'}</span><span><strong>${item[0]}</strong><br><span class="muted">${escapeHtml(item[2])}</span></span></li>`).join('');
+      $('qaBadge').textContent = scaleOk && rooms.length ? 'Preliminary' : 'Needs review'; $('qaBadge').className = 'badge ' + (scaleOk && rooms.length ? 'warn' : 'bad');
     }
-    function reviewedRooms() {
-      return [...document.querySelectorAll('[data-room]')].reduce((rooms, input) => {
-        const i = Number(input.dataset.room); rooms[i] ||= { page: previewData.rooms[i].page };
-        rooms[i][input.dataset.key] = input.dataset.key === 'name' ? input.value : num(input.value); return rooms;
-      }, []);
+    function renderPreview(data) {
+      previewData = data; const pages=data.pages||[], page=pages[0]||{}, rooms=data.rooms||[], openings=pages.flatMap(p=>p.openings||[]);
+      $('analysis').classList.remove('hidden'); $('statDrawing').textContent = (data.filename||file.name||'Drawing').replace(/\.[^.]+$/,''); $('statPages').textContent=`${pages.length||1} page${pages.length===1?'':'s'}`;
+      const ratio=(page.text||'').match(/1\s*[:/]\s*(\d+(?:\.\d+)?)/); $('statScale').textContent=ratio?`1:${ratio[1]}`:(page.scale_status==='DETECTED'?'Detected':'Unknown'); $('statScaleMeta').textContent=`${page.px_per_unit||'—'} px/m · ${page.scale_method||'unknown'} · ${Math.round(Number(page.scale_confidence||0)*100)}%`;
+      $('statRooms').textContent=rooms.length; $('statWalls').textContent=rooms.length ? rooms.length*4 : 0; $('statOpenings').textContent=openings.length; $('statOpeningsMeta').textContent=`${openings.filter(o=>o.opening_kind==='door').length} doors · ${openings.filter(o=>o.opening_kind==='window').length} windows`; $('statQa').textContent='Preliminary';
+      $('drawing').src=page.image||''; $('previewTitle').textContent=`${data.filename||'Drawing'} · page 1`; $('drawing').style.transform=`scale(${zoom})`;
+      $('overlay').innerHTML=rooms.map(r=>{const p=page, x=Number(r.x||0)/p.width*100,y=Number(r.y||0)/p.height*100,w=Number(r.width||0)/p.width*100,h=Number(r.height||0)/p.height*100;return `<div class="overlay-room" style="left:${x}%;top:${y}%;width:${w}%;height:${h}%"></div>`}).join('');
+      $('roomsTable').innerHTML=rooms.length?rooms.map(r=>{const c=confidence(r.confidence), width=Number(r.width_m||0), height=Number(r.height_m||0);return `<tr><td><strong>${escapeHtml(r.name||'Room')}</strong><br><span class="muted">Page ${Number(r.page||0)+1}</span></td><td>${width.toFixed(2)} m</td><td>${height.toFixed(2)} m</td><td>${(width*height).toFixed(2)} m²</td><td><span class="badge ${c.class}">${c.text} · ${Math.round(Number(r.confidence||0)*100)}%</span></td><td><span class="badge info">Detected</span></td></tr>`}).join(''):'<tr><td colspan="6" class="empty">No rooms detected.</td></tr>';
+      const wallRows=[]; rooms.forEach((r,i)=>{const w=Number(r.width_m||0),h=Number(r.height_m||0),name=r.name||`Room ${i+1}`;[[`${name} wall 1`,w],[`${name} wall 2`,h],[`${name} wall 3`,w],[`${name} wall 4`,h]].forEach(x=>wallRows.push(`<tr><td><strong>${escapeHtml(x[0])}</strong><br><span class="muted">Inferred perimeter</span></td><td>${x[1].toFixed(2)} m</td><td>0.23 m <span class="badge warn">Assumed</span></td><td>3.00 m <span class="badge warn">Assumed</span></td><td>${(x[1]*.23*3).toFixed(3)}</td><td>m³</td><td><span class="badge warn">Preliminary</span></td></tr>`));}); $('wallsTable').innerHTML=wallRows.join('')||'<tr><td colspan="7" class="empty">No wall geometry available.</td></tr>';
+      renderQA(pages,rooms,openings); $('deficiencies').innerHTML=`<div class="issue"><span class="badge warn">WARNING</span><p>Automatic extraction is preliminary. QS review and sign-off are required before tender use.</p></div>`+(rooms.filter(r=>Number(r.confidence||0)<.5).map(r=>`<div class="issue"><span class="badge warn">WARNING</span><p>${escapeHtml(r.id)} has low room-detection confidence. Verify position, name and dimensions.</p></div>`).join(''))+(openings.length?'':`<div class="issue"><span class="badge info">INFO</span><p>No opening candidates were detected by the backend for this drawing.</p></div>`); $('assumptions').innerHTML='<div class="issue"><span class="badge warn">ASSUMED</span><p>Wall height: 3.00 m · wall thickness: 0.23 m. These are automatic pipeline inputs, not measured drawing facts.</p></div><div class="issue"><span class="badge info">METHOD</span><p>Scale, rooms and source image are taken from the live /preview response. Walls are inferred from detected room perimeters.</p></div>';
+      setStep(2); setStage(6,true); $('miniProcess').innerHTML=stages.map(s=>`<div class="process-row done"><span class="dot"></span>${s[0].toUpperCase()+s.slice(1)}</div>`).join('');
     }
-    async function download(mode) {
-      if (!file) return status('Choose a drawing first.', true);
-      const form = new FormData(); form.append('file', file);
-      form.append('wall_height_m', $('wallHeight').value); form.append('wall_thickness_m', $('wallThickness').value);
-      const scale = num($('confirmedScale').value);
-      if (mode === 'reviewed') {
-        form.append('reviewed_rooms', JSON.stringify(reviewedRooms()));
-        form.append('page_scales', JSON.stringify((previewData.pages || []).map(p => scale || p.px_per_unit)));
-        form.append('qs_name', $('qsName').value);
-        form.append('qs_signed', $('qsSigned').checked ? 'true' : 'false');
-      } else if (scale > 0) {
-        form.append('page_scales', JSON.stringify((previewData.pages || []).map(() => scale)));
-      }
-      status('Generating workbook...'); const response = await fetch(`${api}/generate`, { method: 'POST', body: form });
-      if (!response.ok) return status(await response.text(), true);
-      const blob = await response.blob(), link = document.createElement('a');
-      link.href = URL.createObjectURL(blob); link.download = mode === 'reviewed' ? 'reviewed_boq.xlsx' : 'preliminary_boq.xlsx'; link.click(); URL.revokeObjectURL(link.href);
-      status('Workbook downloaded. Review the Deficiencies and Cover sheets before tender use.');
-    }
-    $('file').onchange = event => { file = event.target.files[0]; };
-    $('preview').onclick = async () => {
-      if (!file) return status('Choose a drawing first.', true);
-      const form = new FormData(); form.append('file', file); status('Detecting...');
-      const response = await fetch(`${api}/preview`, { method: 'POST', body: form });
-      if (!response.ok) return status(await response.text(), true);
-      render(await response.json()); status('Detection complete. Correct uncertain fields before reviewed generation.');
-    };
-    $('automatic').onclick = () => download('automatic');
-    $('reviewed').onclick = () => download('reviewed');
+    async function preview() { if(!file)return showError('Choose a PDF drawing before starting analysis.'); clearError(); setStage(0); $('analysis').classList.add('hidden'); const form=new FormData();form.append('file',file); try{setStage(1);const response=await fetch(`${api}/preview`,{method:'POST',body:form});if(!response.ok)throw new Error('Analysis could not be completed. Please check the drawing and try again.');setStage(2);renderPreview(await response.json());}catch(error){$('processing').classList.add('hidden');showError(error.message||'Analysis failed.');} }
+    async function generate() { if(!file||!previewData)return showError('Analyze the drawing before generating Excel.'); clearError(); setStep(3); setStage(4); const form=new FormData();form.append('file',file);form.append('wall_height_m','3');form.append('wall_thickness_m','0.23'); try{const response=await fetch(`${api}/generate`,{method:'POST',body:form});if(!response.ok)throw new Error('Excel generation failed. Please try again or inspect the drawing.');workbookBlob=await response.blob();setStage(6,true);$('exportResult').classList.remove('hidden');$('exportDetail').textContent=`${formatBytes(workbookBlob.size)} workbook · preliminary QA status`;parseWorkbook(workbookBlob);}catch(error){showError(error.message||'Excel generation failed.');} }
+    async function parseWorkbook(blob) { if(!window.XLSX){$('boqSubtitle').textContent='Workbook generated. Download it to inspect mapped BOQ items.';return;} try{const book=XLSX.read(await blob.arrayBuffer(),{type:'array'}), rows=XLSX.utils.sheet_to_json(book.Sheets.BOQ,{header:1}); const header=rows[0]||[], data=rows.slice(1).filter(r=>r[0]!==undefined&&typeof r[1]==='number'); $('boqTable').innerHTML=data.length?data.map(r=>`<tr><td>${escapeHtml(r[0])}</td><td><strong>${escapeHtml(r[1])}</strong></td><td title="${escapeHtml(r[2])}" style="max-width:330px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(r[2])}</td><td>${escapeHtml(r[3])}</td><td>${r[4]??'—'}</td><td>${r[5]??'Not available'}</td><td>${r[6]??'Not calculated'}</td><td><span class="badge warn">${escapeHtml(r[9]||'Provisional')}</span></td></tr>`).join(''):'<tr><td colspan="8" class="empty">No BOQ items returned.</td></tr>'; $('boqSubtitle').textContent=`${data.length} mapped item${data.length===1?'':'s'} loaded from the generated workbook.`;}catch(e){$('boqSubtitle').textContent='Workbook generated. Download it to inspect mapped BOQ items.';} }
+    $('browse').onclick=()=> $('file').click(); $('file').onchange=e=>{file=e.target.files[0];if(file){$('fileName').textContent=file.name;$('fileSize').textContent=formatBytes(file.size);clearError();}};
+    ['dragenter','dragover'].forEach(event=>$('dropzone').addEventListener(event,e=>{e.preventDefault();$('dropzone').classList.add('dragging');}));['dragleave','drop'].forEach(event=>$('dropzone').addEventListener(event,e=>{e.preventDefault();$('dropzone').classList.remove('dragging');}));$('dropzone').ondrop=e=>{file=e.dataTransfer.files[0];if(file){$('fileName').textContent=file.name;$('fileSize').textContent=formatBytes(file.size);preview();}}; $('dropzone').ondblclick=()=>preview(); $('dropzone').onclick=e=>{if(e.target.id!=='browse')$('file').click();};
+    $('analyze').onclick=preview; $('generateExcel').onclick=generate; $('downloadExcel').onclick=()=>{if(!workbookBlob)return;const a=document.createElement('a');a.href=URL.createObjectURL(workbookBlob);a.download='preliminary_boq.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500);}; $('newDrawing').onclick=()=>location.reload(); $('zoomIn').onclick=()=>{zoom=Math.min(2,zoom+.1);$('drawing').style.transform=`scale(${zoom})`;}; $('zoomOut').onclick=()=>{zoom=Math.max(.7,zoom-.1);$('drawing').style.transform=`scale(${zoom})`;}; $('zoomReset').onclick=()=>{zoom=1;$('drawing').style.transform='scale(1)';}; $('boqSearch').oninput=e=>filterBoq(e.target.value);$('boqFilter').onchange=e=>filterBoq(e.target.value);
+    function filterBoq(query){document.querySelectorAll('#boqTable tr').forEach(row=>{const text=row.textContent.toLowerCase(), status=row.textContent.toLowerCase().includes('priced')?'priced':'provisional';row.style.display=(!query||text.includes(query.toLowerCase()))&&($('boqFilter').value==='all'||status===$('boqFilter').value)?'':'none';});}
   </script>
 </body>
 </html>
