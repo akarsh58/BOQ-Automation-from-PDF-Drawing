@@ -305,14 +305,12 @@ def auto_detect_scale(image, text, render_dpi=200):
         m = re.search(r"\bSCALE\s*1\s*[:/]\s*(\d+(?:\.\d+)?)\b", text, re.IGNORECASE)
         if m:
             ratio = float(m.group(1))
-            dpi_ratio = render_dpi / 72
             if ratio > 0:
                 px_per_m = calculate_pixels_per_real_unit(ratio, render_dpi)
                 return px_per_m, 0.95, "text_scale", {"scale_text": m.group(0), "ratio": ratio}
         m2 = re.search(r"\b1\s*[:/]\s*(\d+(?:\.\d+)?)\b", text)
         if m2 and "scale" in text.lower():
             ratio = float(m2.group(1))
-            dpi_ratio = render_dpi / 72
             px_per_m = calculate_pixels_per_real_unit(ratio, render_dpi)
             return px_per_m, 0.85, "scale_text", {"ratio": ratio}
 
@@ -358,9 +356,41 @@ def auto_detect_openings(rooms, ocr_text, image_shape=None):
                     "width_m": round(w_m, 2),
                     "height_m": round(h_m, 2),
                     "source": "auto-detected",
+                    "dimension_status": "DETECTED",
+                    "host_status": "UNASSOCIATED",
+                    "confidence": 0.4,
                 })
     
     return openings
+
+
+def associate_opening_to_walls(opening, walls, tolerance=15.0):
+    """Associate an opening only when an explicit centre is near a wall."""
+    center = (
+        opening.get("center_px")
+        or opening.get("position_px")
+        or opening.get("center_m")
+        or opening.get("position_m")
+    )
+    if not isinstance(center, (list, tuple)) or len(center) < 2:
+        return None
+    candidates = []
+    for wall in walls:
+        points = wall.get("points") or []
+        if len(points) < 2:
+            continue
+        (x1, y1), (x2, y2) = points[0], points[-1]
+        dx, dy = x2 - x1, y2 - y1
+        length_sq = dx * dx + dy * dy
+        if length_sq:
+            t = max(0.0, min(1.0, ((center[0] - x1) * dx + (center[1] - y1) * dy) / length_sq))
+            nearest = (x1 + t * dx, y1 + t * dy)
+        else:
+            nearest = (x1, y1)
+        distance = float(np.hypot(center[0] - nearest[0], center[1] - nearest[1]))
+        if distance <= tolerance:
+            candidates.append((distance, wall.get("id")))
+    return min(candidates)[1] if candidates else None
 
 
 def auto_detect_walls(rooms, image_shape=None):
@@ -461,9 +491,15 @@ def build_takeoff_from_detection(image, text, rooms, render_dpi=200):
         room_id += 1
         rooms_m.append({
             "id": f"auto-room-{room_id}",
+            "box": room["box"],
             "name": classified_name,
             "category": category,
-            "points": [[0, 0], [width_m, 0], [width_m, height_m], [0, height_m]],
+            "points": [
+                [round(x / px_per_m, 3), round(y / px_per_m, 3)],
+                [round((x + w) / px_per_m, 3), round(y / px_per_m, 3)],
+                [round((x + w) / px_per_m, 3), round((y + h) / px_per_m, 3)],
+                [round(x / px_per_m, 3), round((y + h) / px_per_m, 3)],
+            ],
             "width_m": width_m,
             "height_m": height_m,
             "x_m": round(x / px_per_m, 2),
@@ -518,15 +554,15 @@ def build_takeoff_from_detection(image, text, rooms, render_dpi=200):
             "opening_kind": opening["opening_kind"],
             "width_m": opening["width_m"],
             "height_m": opening["height_m"],
-            "host_id": "wall-1" if walls else None,
+            "host_id": None,
             "source": "auto-detected",
+            "extra": {
+                "derivation": "DETECTED",
+                "confidence": opening.get("confidence", 0.4),
+                "dimension_status": opening.get("dimension_status", "UNKNOWN"),
+                "host_status": "UNASSOCIATED",
+            },
         })
-    
-    scale_method_str = scale_method
-    if scale_method == "text_scale":
-        scale_method_str = "two_point"
-    elif scale_method == "paper_size":
-        scale_method_str = "manual"
     
     takeoff_data = {
         "project_name": "Auto-detected Project",
@@ -534,7 +570,7 @@ def build_takeoff_from_detection(image, text, rooms, render_dpi=200):
         "qs_name": "",
         "qs_signed": False,
         "units": "m",
-        "scale_method": scale_method_str,
+        "scale_method": scale_method,
         "ifc_units_confirmed": False,
         "automatic": True,
         "preliminary": True,
@@ -544,8 +580,10 @@ def build_takeoff_from_detection(image, text, rooms, render_dpi=200):
         "calibrations": [{
             "page": 0,
             "px_per_m": px_per_m,
-            "method": scale_method_str,
-            "calibrated": True,
+            "method": scale_method,
+            "calibrated": False,
+            "confidence": scale_confidence,
+            "assumption": scale_assumption,
         }] if px_per_m else [],
         "elements": elements,
         "notes": [

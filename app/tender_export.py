@@ -423,6 +423,10 @@ def _write_qa(ws, doc: TakeoffDocument, deficiencies: list[Deficiency]):
     walls = sum(1 for item in doc.elements if item.type == "wall")
     doors = sum(1 for item in doc.elements if item.type == "opening" and item.opening_kind == "door")
     windows = sum(1 for item in doc.elements if item.type == "opening" and item.opening_kind == "window")
+    unassociated = sum(
+        1 for item in doc.elements
+        if item.type == "opening" and not item.host_id
+    )
     rows = [
         ("Overall Status", "AUTOMATED_PRELIMINARY" if doc.automatic else ("QS_SIGNED" if doc.qs_signed else "DRAFT"), "REVIEW_REQUIRED" if doc.automatic else "OK"),
         ("Scale Status", "DETECTED" if doc.scale_confidence >= 0.8 else "UNKNOWN", "OK" if doc.scale_confidence >= 0.8 else "WARNING"),
@@ -431,6 +435,7 @@ def _write_qa(ws, doc: TakeoffDocument, deficiencies: list[Deficiency]):
         ("Detected Walls", walls, "INFO"),
         ("Detected Doors", doors, "INFO"),
         ("Detected Windows", windows, "INFO"),
+        ("Unassociated openings", unassociated, "WARNING" if unassociated else "OK"),
         ("Warnings / deficiencies", len(deficiencies), "WARNING" if deficiencies else "OK"),
         ("QS sign-off", "NOT SUPPLIED" if not doc.qs_signed else "SUPPLIED", "REQUIRED" if not doc.qs_signed else "OK"),
         ("Assumptions", "; ".join(doc.notes), "VISIBLE"),

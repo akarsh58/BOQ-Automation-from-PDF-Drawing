@@ -31,6 +31,7 @@ from app.extraction import (
     extract_room_labels,
     assign_room_labels,
     auto_detect_openings,
+    associate_opening_to_walls,
     extract_text_vector,
     find_dimension_strings,
     pdf_to_images,
@@ -450,6 +451,8 @@ def _automatic_takeoff(
                     wall["host_space_ids"].append(room_id)
                     wall["shared"] = True
         for opening in page.get("openings") or []:
+            page_walls = [wall for wall in walls_by_key.values() if wall.get("page") == page_index]
+            host_id = associate_opening_to_walls(opening, page_walls, tolerance=0.15)
             elements.append(
                 {
                     "id": f"p{page_index}-{opening['id']}",
@@ -459,11 +462,13 @@ def _automatic_takeoff(
                     "opening_kind": opening["opening_kind"],
                     "width_m": opening["width_m"],
                     "height_m": opening["height_m"],
+                    "host_id": host_id,
                     "source": "2d",
                     "extra": {
                         "derivation": "DETECTED",
                         "confidence": 0.4,
                         "dimension_status": "DETECTED",
+                        "host_status": "ASSOCIATED" if host_id else "UNASSOCIATED",
                     },
                 }
             )
