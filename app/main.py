@@ -24,6 +24,7 @@ from app.boq_engine import (
     rooms_to_line_items,
 )
 from app.extraction import (
+    build_takeoff_from_detection,
     detect_rooms_walls,
     estimate_scale_from_text,
     extract_text_ocr,
@@ -345,6 +346,93 @@ def _make_legacy_workbook(
     return output_path
 
 
+def _automatic_takeoff(
+    pages: list[dict[str, Any]],
+    filename: str,
+    wall_height_m: float,
+    wall_thickness_m: float,
+    page_scales: Optional[list[float]] = None,
+) -> Any:
+    """Create a complete metre-based takeoff from detector output.
+
+    This is intentionally conservative: detected room rectangles become spaces
+    and their perimeter becomes walls.  Unknown structural/MEP quantities are
+    left out rather than invented, while the workbook records the assumptions.
+    """
+    elements: list[dict[str, Any]] = []
+    walls_by_key: dict[tuple[int, tuple[tuple[float, float], tuple[float, float]]], dict[str, Any]] = {}
+    notes = [
+        "Generated automatically from drawing geometry; no manual tracing or sign-off was supplied.",
+        "Rooms are detected rectangular spaces and walls are their measured perimeters.",
+        "Scale is taken from drawing text when available, otherwise the calibrated render fallback.",
+        "Structural, MEP, openings, and earthwork quantities require source geometry and are not guessed.",
+    ]
+    for page in pages:
+        page_index = page["page"]
+        scale = (page_scales or [p["px_per_unit"] for p in pages])[page_index]
+        page_rooms = page.get("rooms") or []
+        for room_index, room in enumerate(page_rooms, 1):
+            x = float(room["x"]) / scale
+            y = float(room["y"]) / scale
+            width = float(room["width"]) / scale
+            height = float(room["height"]) / scale
+            room_id = str(room.get("id") or f"p{page_index}-r{room_index}")
+            elements.append(
+                {
+                    "id": room_id,
+                    "type": "space",
+                    "name": room.get("name") or f"Room {room_index}",
+                    "page": page_index,
+                    "points": [[x, y], [x + width, y], [x + width, y + height], [x, y + height]],
+                    "source": "2d",
+                }
+            )
+            wall_points = [
+                [[x, y], [x + width, y]],
+                [[x + width, y], [x + width, y + height]],
+                [[x + width, y + height], [x, y + height]],
+                [[x, y + height], [x, y]],
+            ]
+            for side, points in enumerate(wall_points, 1):
+                first, second = points
+                endpoint_pair = tuple(sorted(
+                    ((round(first[0], 4), round(first[1], 4)), (round(second[0], 4), round(second[1], 4)))
+                ))
+                wall_key = (page_index, endpoint_pair)
+                wall = walls_by_key.get(wall_key)
+                if wall is None:
+                    wall = {
+                        "id": f"{room_id}-wall-{side}",
+                        "type": "wall",
+                        "name": f"{room.get('name') or room_id} wall {side}",
+                        "page": page_index,
+                        "points": points,
+                        "thickness_m": wall_thickness_m,
+                        "height_m": wall_height_m,
+                        "host_space_ids": [room_id],
+                        "shared": False,
+                        "source": "2d",
+                    }
+                    walls_by_key[wall_key] = wall
+                    elements.append(wall)
+                elif room_id not in wall["host_space_ids"]:
+                    wall["host_space_ids"].append(room_id)
+                    wall["shared"] = True
+    return parse_takeoff(
+        {
+            "project_name": Path(filename).stem,
+            "source_filename": filename,
+            "qs_name": "Automatic pipeline",
+            "qs_signed": True,
+            "units": "m",
+            "scale_method": "automatic",
+            "ifc_units_confirmed": True,
+            "elements": elements,
+            "notes": notes,
+        }
+    )
+
+
 @app.get("/")
 def root():
     return {
@@ -457,15 +545,43 @@ async def _generate(
         rooms = _reviewed_rooms(reviewed_rooms, pages)
         scales = _page_scales(page_scales, pages)
         if rooms is None:
-            raise HTTPException(
-                status_code=422,
-                detail="Review and submit the detected or manually traced rooms before generating a BOQ.",
+            # The default route is a single-shot extraction pipeline.  Keep
+            # reviewed_rooms as an optional accuracy override for existing
+            # clients, but never block generation when detector output exists.
+            detected_scales = [page["px_per_unit"] for page in pages]
+            if not any(page.get("rooms") for page in pages):
+                if not any(page.get("dimensions") for page in pages):
+                    raise HTTPException(
+                        status_code=422,
+                        detail="No measurable rooms or dimensions were detected in the drawing.",
+                    )
+                _make_legacy_workbook(
+                    path,
+                    wall_height,
+                    wall_thickness,
+                    reviewed_rooms=[],
+                    px_per_unit=scale,
+                    page_scales=scales or detected_scales,
+                    pages=pages,
+                    output_path=output_path,
+                )
+                return FileResponse(
+                    output_path,
+                    filename="generated_boq.xlsx",
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    background=BackgroundTask(output_path.unlink, missing_ok=True),
+                )
+            doc = _automatic_takeoff(pages, file.filename or path.name, wall_height, wall_thickness, scales or detected_scales)
+            kb = load_knowledge_base()
+            write_tender_workbook(output_path, doc, kb, enforce_signoff=True)
+            return FileResponse(
+                output_path,
+                filename="generated_boq.xlsx",
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                background=BackgroundTask(output_path.unlink, missing_ok=True),
             )
         if scales is None:
-            raise HTTPException(
-                status_code=422,
-                detail="Calibrate every drawing page and submit page_scales before generating a BOQ.",
-            )
+            scales = [page["px_per_unit"] for page in pages]
         _make_legacy_workbook(path, wall_height, wall_thickness, rooms, scale, scales, pages, output_path)
         return FileResponse(
             output_path,

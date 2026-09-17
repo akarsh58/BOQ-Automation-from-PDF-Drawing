@@ -68,30 +68,30 @@ Check `output/demo_generated_boq.xlsx` for the result.
    ```
    API docs available at http://localhost:8000/docs
 
-2. Open `frontend/index.html` directly in your browser (double-click it), choose
-   a drawing, and click **Load for takeoff**.
-   The UI calls `POST /preview`, displays detected draft spaces, and lets you
-   trace or review spaces, walls, openings, slabs, beams, columns, footings,
-   and excavations. Calibrate every drawing page using two known points, enter
-   the default wall height/thickness, then complete QS sign-off. The reviewed
-   takeoff is sent to `POST /generate` and a tender workbook with cover,
-   taking-off, abstract, priced BOQ, and deficiencies sheets downloads.
+2. For a single-shot run, send the drawing directly to `POST /generate`.
+   The API detects room rectangles, extracts scale text, creates metre-based
+   spaces and perimeter walls, and returns a tender workbook without requiring
+   tracing, calibration, or a browser workflow. `POST /preview` remains
+   available when a QS wants to inspect detector output before export.
+   Reviewed takeoff JSON can still be sent to `POST /generate` to override
+   automatic geometry.
 
 The API permits the standalone `file://` frontend and common localhost
 development ports by default. For a deployed frontend, set
 `BOQ_CORS_ORIGINS` to a comma-separated allowlist (for example,
 `https://boq.example.com`) before starting Uvicorn.
 
-BOQ generation requires reviewed geometry, an explicit scale for every 2D drawing
-page, and QS sign-off. Automatic room boxes remain preview suggestions only. OCR
-suggests common room names when recognised text falls inside a detected box; names
-and geometry still require confirmation. The detailed taking-off sheet records
-measured quantity, wastage quantity, and wastage percentage separately for masonry
-and concrete items so the final quantity can be audited.
+Single-shot generation uses detected geometry and automatic QS metadata so it can
+run unattended. If no rooms are detected, dimension strings are used as a
+flooring fallback; a drawing with neither measurable rooms nor dimensions is
+rejected explicitly. Automatic results should still be reviewed before tender
+award. The detailed taking-off sheet records measured quantity, wastage quantity,
+and wastage percentage separately for masonry and concrete items so the final
+quantity can be audited.
 
-The original `POST /generate-boq` endpoint remains available for compatibility,
-but it also requires reviewed rooms and page scales. The newer `POST /generate`
-endpoint accepts reviewed `takeoff` JSON and is the recommended tender-grade path.
+The original `POST /generate-boq` endpoint remains available for compatibility.
+Both generation endpoints accept reviewed `takeoff` JSON or perform the
+single-shot automatic path when no review payload is supplied.
 Uploads are validated (type, size, decoded content, and render limits), and
 temporary files are cleaned up after every request.
 

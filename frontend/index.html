@@ -4,6 +4,110 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BOQ Automation — QS-Assisted Takeoff</title>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>BOQ Automation</h1>
+      <p>Bill of Quantities generator from PDF/IFC drawings using IS 1200 and CPWD rates.</p>
+    </header>
+    <div class="workflow">
+      <h2>Workflow</h2>
+      <ol>
+        <li>Upload a PDF or IFC drawing</li>
+        <li>Auto-detect rooms, walls, openings with intelligent interpretation</li>
+        <li>Review/quick-adjust detected elements</li>
+        <li>Generate tender BOQ Excel workbook</li>
+      </ol>
+    </div>
+    <section class="section">
+      <h2>Upload Drawing</h2>
+<style>
+  :root{--primary:#1976d2;--secondary:#ffb300;--success:#4caf50;--error:#f44336;--bg:#fafafa;--card:#fff;--border:#eaeaea;--text:#333}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',Verdana,Arial,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:2rem}
+  .container{max-width:1200px;margin:0 auto}
+  .header{margin-bottom:2rem;padding-bottom:2rem;border-bottom:1px solid var(--border)}
+  .workflow{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:1.5rem;margin:1.5rem 0}
+  .workflow ol{margin:0;padding-left:1.8rem}
+  .workflow li{margin:0.5rem 0}
+  .section{margin:2rem 0}
+  .section h2{color:var(--primary);margin-bottom:1rem;padding-bottom:0.5rem;border-bottom:1px solid var(--border)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin:1.5rem 0}
+  @media(max-width:768px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:1.5rem;margin:1rem 0}
+  .element-card{background:#fafafa;border:1px solid var(--border);border-radius:4px;padding:1rem;margin:0.5rem 0}
+  .element-card h3{margin:0 0 0.5rem 0;font-size:1rem}
+  .form-group{margin:0.5rem 0}
+  .form-group label{display:block;margin-bottom:0.3rem;font-size:0.9rem}
+  .form-group input,.form-group select,.form-group textarea{width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:4px;background:#fff}
+  .btn{display:inline-block;padding:0.6rem 1.2rem;background:var(--primary);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.95rem;transition:background 0.2s}
+  .btn:hover{background:#1565c0}
+  .btn-secondary{background:#6c757d;opacity:0.8}
+  .btn-success{background:var(--success);opacity:0.9}
+  .btn-danger{background:var(--error);opacity:0.9}
+  .file-drop{border:2px dashed var(--border);border-radius:8px;padding:2rem;text-align:center;cursor:pointer;transition:border-color 0.2s}
+  .file-drop:hover{border-color:var(--primary)}
+  .file-drop input{display:none}
+  .element-list{max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:0.8rem;background:#fafafa;margin-top:0.5rem}
+  .element-item{background:#fff;padding:0.5rem;margin:0.3rem 0;border-radius:4px;display:flex;justify-content:space-between;align-items:center;border:1px solid #eee}
+  .element-item:hover{border-color:#c0c0c0}
+  .confidence-high{color:#2e7d32}
+  .confidence-medium{color:#f9a825}
+  .confidence-low{color:#e53935}
+  .scale-display{background:#e8f5e9;padding:1rem;border-radius:4px;margin:1rem 0}
+  .small{font-size:0.85rem;color:#666}
+  .mt-2{margin-top:0.5rem}
+  .w-100{width:100%}
+  .text-center{text-align:center}
+</style>
+      <div class="file-drop" id="drop-area">
+        <p>Drag & drop PDF or image here</p>
+        <p>or <b>click to browse</b> <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.webp,.ifc,.ifczip"></p>
+      </div>
+    </section>
+    <section class="section" id="auto-detect-section">
+      <h2>Auto-Detection Results</h2>
+      <div id="auto-detect-loading" style="display:none;color:#666">Auto-detecting...</div>
+      <div id="auto-detect-results" style="display:none">
+        <p><strong>Scale detected:</strong> <span id="detected-scale">—</span> px/m</p>
+        <p><strong>Strategy:</strong> <span id="detected-method">—</span></p>
+        <div class="grid">
+          <div class="element-card"><h3>Detected Rooms</h3><div id="rooms-list"></div></div>
+          <div class="element-card"><h3>Detected Walls</h3><div id="walls-list"></div></div>
+        </div>
+      </div>
+    </section>
+    <section class="section" id="review-section" style="display:none">
+      <h2>Review & Adjust</h2>
+      <div class="grid">
+        <div><h3>Rooms</h3><div id="review-rooms-list"></div></div>
+        <div><h3>Walls</h3><div id="review-walls-list"></div></div>
+      </div>
+      <div class="scale-display" id="scale-display">
+        <strong>Scale:</strong> <span id="scale-value">—</span> px/m
+        <button class="btn btn-secondary" onclick="calibrateScaleManual()">Manual Calibration</button>
+      </div>
+    </section>
+    <section class="section" id="generate-section" style="display:none">
+      <h2>Generate BOQ</h2>
+      <div class="form-group"><label>Wall Height (m): <input type="number" id="wall-height" value="3.0" step="0.1"></label></div>
+      <div class="form-group"><label>Wall Thickness (m): <input type="number" id="wall-thickness" value="0.23" step="0.01"></label></div>
+      <button class="btn btn-primary w-100" onclick="generateBOQ()">Generate Tender BOQ</button>
+    </section>
+    <footer>
+      <p>Knowledge base: CPWD-style rates from <code>knowledge_base/cpwd_rates.csv</code></p>
+      <p>Measurement standard: IS 1200 (Indian Standard)</p>
+    </footer>
+  </div>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BOQ Automation — QS-Assisted Takeoff</title>
   <style>
     body{font-family:sans-serif;margin:2rem;background:#fafafa;color:#333}
     .card{background:#fff;border:1px solid #eaeaea;border-radius:6px;padding:1.5rem;margin:1rem 0;max-width:600px}
