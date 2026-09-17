@@ -197,7 +197,7 @@ def _page_data(path: Path) -> list[dict[str, Any]]:
         px_per_unit = px_per_unit or 50.0
         boxes = detect_rooms_walls(image)
         sorted_boxes = sorted(boxes, key=lambda b: (b[1], b[0]))
-        openings = auto_detect_openings(sorted_boxes, text, image.shape)
+        openings = auto_detect_openings(sorted_boxes, text, image)
         try:
             room_labels = extract_room_labels(image)
         except Exception:
@@ -438,6 +438,7 @@ def _automatic_takeoff(
                         "host_space_ids": [room_id],
                         "shared": False,
                         "source": "2d",
+                        "coordinate_system": "m",
                         "extra": {
                             "derivation": "INFERRED",
                             "confidence": 0.35,
@@ -452,7 +453,16 @@ def _automatic_takeoff(
                     wall["shared"] = True
         for opening in page.get("openings") or []:
             page_walls = [wall for wall in walls_by_key.values() if wall.get("page") == page_index]
-            host_id = associate_opening_to_walls(opening, page_walls, tolerance=0.15)
+            host_id = associate_opening_to_walls(
+                opening,
+                page_walls,
+                tolerance=0.15,
+                pixels_per_m=scale,
+            )
+            center_px = opening.get("center_px") or opening.get("position_px")
+            opening_points = None
+            if isinstance(center_px, (list, tuple)) and len(center_px) >= 2:
+                opening_points = [[float(center_px[0]) / scale, float(center_px[1]) / scale]]
             elements.append(
                 {
                     "id": f"p{page_index}-{opening['id']}",
@@ -463,10 +473,11 @@ def _automatic_takeoff(
                     "width_m": opening["width_m"],
                     "height_m": opening["height_m"],
                     "host_id": host_id,
+                    "points": opening_points,
                     "source": "2d",
                     "extra": {
                         "derivation": "DETECTED",
-                        "confidence": 0.4,
+                        "confidence": 0.8 if host_id else 0.4,
                         "dimension_status": "DETECTED",
                         "host_status": "ASSOCIATED" if host_id else "UNASSOCIATED",
                     },

@@ -317,7 +317,7 @@ def auto_detect_scale(image, text, render_dpi=200):
     return None, 0.0, "unknown", {"note": "No scale detected"}
 
 
-def auto_detect_openings(rooms, ocr_text, image_shape=None):
+def auto_detect_openings(rooms, ocr_text, image=None):
     """
     Automatically detect doors and windows near walls.
     Uses OCR text to find door/window symbols and dimensions.
@@ -328,6 +328,45 @@ def auto_detect_openings(rooms, ocr_text, image_shape=None):
         return openings
     
     lines = ocr_text.split("\n") if ocr_text else []
+    located_lines = {}
+    if image is not None and isinstance(image, np.ndarray):
+        try:
+            image_data = pytesseract.image_to_data(
+                image,
+                config="--psm 11",
+                output_type=pytesseract.Output.DICT,
+            )
+            grouped = {}
+            for index, raw_word in enumerate(image_data.get("text", [])):
+                word = " ".join(str(raw_word).split())
+                if not word:
+                    continue
+                key = (
+                    image_data.get("block_num", [0])[index],
+                    image_data.get("par_num", [0])[index],
+                    image_data.get("line_num", [0])[index],
+                )
+                try:
+                    box = (
+                        int(image_data["left"][index]),
+                        int(image_data["top"][index]),
+                        int(image_data["width"][index]),
+                        int(image_data["height"][index]),
+                    )
+                except (KeyError, TypeError, ValueError, IndexError):
+                    continue
+                if box[2] > 0 and box[3] > 0:
+                    grouped.setdefault(key, []).append((word, box))
+            for words in grouped.values():
+                line_text = " ".join(word for word, _ in words)
+                if re.search(r"\b(?:door|window|d-\w*|w-\w*)\b", line_text, re.IGNORECASE):
+                    left = min(box[0] for _, box in words)
+                    top = min(box[1] for _, box in words)
+                    right = max(box[0] + box[2] for _, box in words)
+                    bottom = max(box[1] + box[3] for _, box in words)
+                    located_lines[line_text.lower()] = [(left + right) / 2, (top + bottom) / 2]
+        except (RuntimeError, ValueError):
+            located_lines = {}
     opening_id = 0
     
     for line in lines:
@@ -349,6 +388,13 @@ def auto_detect_openings(rooms, ocr_text, image_shape=None):
                 
                 opening_id += 1
                 opening_kind = "door" if is_door else "window"
+                location = located_lines.get(line_lower)
+                if location is None:
+                    kind_word = "door" if is_door else "window"
+                    for located_text, located_center in located_lines.items():
+                        if kind_word in located_text and dims.group(0).lower().replace(" ", "") in located_text.replace(" ", ""):
+                            location = located_center
+                            break
                 openings.append({
                     "id": f"auto-{opening_kind}-{opening_id}",
                     "name": f"{opening_kind.capitalize()} {opening_id}",
@@ -359,23 +405,28 @@ def auto_detect_openings(rooms, ocr_text, image_shape=None):
                     "dimension_status": "DETECTED",
                     "host_status": "UNASSOCIATED",
                     "confidence": 0.4,
+                    **({"center_px": location} if location else {}),
                 })
     
     return openings
 
 
-def associate_opening_to_walls(opening, walls, tolerance=15.0):
-    """Associate an opening only when an explicit centre is near a wall."""
-    center = (
-        opening.get("center_px")
-        or opening.get("position_px")
-        or opening.get("center_m")
-        or opening.get("position_m")
-    )
+def associate_opening_to_walls(opening, walls, tolerance=0.15, pixels_per_m=None):
+    """Associate an opening using a centre and a common wall coordinate system."""
+    center = opening.get("center_px") or opening.get("position_px")
+    center_units = "px" if center is not None else None
+    if center is None:
+        center = opening.get("center_m") or opening.get("position_m")
+        center_units = "m" if center is not None else None
     if not isinstance(center, (list, tuple)) or len(center) < 2:
         return None
+    if center_units == "px" and pixels_per_m:
+        center = (float(center[0]) / pixels_per_m, float(center[1]) / pixels_per_m)
+        center_units = "m"
     candidates = []
     for wall in walls:
+        if wall.get("coordinate_system", "m") != center_units:
+            continue
         points = wall.get("points") or []
         if len(points) < 2:
             continue
