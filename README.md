@@ -1,5 +1,43 @@
 # BOQ Automation from PDF/Drawing
 
+> **AEC automation portfolio project:** converts construction drawings into reviewable quantity takeoff data and an Excel BOQ using Python, PDF extraction, OCR, OpenCV and FastAPI.
+
+## Recruiter snapshot
+
+**Target roles:** AEC Automation Engineer · BIM Automation Engineer · Construction Technology Engineer · Digital Engineering / Computational Design
+
+**What this project demonstrates**
+- Automating a real quantity-surveying workflow rather than a generic software demo.
+- Extracting information from vector PDFs and scanned drawings.
+- Combining PDF parsing, OCR and computer vision with engineering quantity logic.
+- Building auditable takeoff outputs with QA/deficiency reporting and human review.
+- Exposing the workflow through FastAPI and exporting structured Excel deliverables.
+- Designing for uncertainty: scale confidence, calibration, validation and reviewer sign-off are treated explicitly.
+
+**Core stack:** Python · FastAPI · OpenCV · Tesseract OCR · pdfplumber · PyMuPDF · pandas · openpyxl · IFC-ready workflow
+
+### Workflow
+
+```text
+Construction PDF / scan
+        ↓
+Text + OCR extraction
+        ↓
+Geometry / room detection
+        ↓
+Scale calibration + review
+        ↓
+Engineering quantity calculations
+        ↓
+Rate / item mapping
+        ↓
+QA + deficiencies + audit trail
+        ↓
+Tender-ready Excel BOQ
+```
+
+---
+
 An end-to-end pipeline that reads a construction drawing (PDF or scanned image)
 and automatically generates a structured, editable Bill of Quantities (BOQ) in Excel.
 
